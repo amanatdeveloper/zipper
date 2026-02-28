@@ -4,8 +4,6 @@ import { getGoogleAdsClient, getWooCommerceClient } from '../../../lib/api-clien
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
-    
-    // Custom Date Range Handling
     const startParam = searchParams.get('start');
     const endParam = searchParams.get('end');
     
@@ -19,19 +17,25 @@ export async function GET(request) {
       startDate.setDate(startDate.getDate() - 30);
     }
 
-    // Google Ads Format: YYYYMMDD
     const formatDateGoogle = (date) => date.toISOString().split('T')[0].replace(/-/g, '');
     const startGoogle = formatDateGoogle(startDate);
     const endGoogle = formatDateGoogle(endDate);
 
-    // 1. Google Ads Data
+    // 1. Fetch Google Ads Data
     const customer = getGoogleAdsClient();
     const googleQuery = `
       SELECT segments.product_item_id, metrics.clicks, metrics.cost_micros 
       FROM shopping_performance_view 
       WHERE segments.date BETWEEN '${startGoogle}' AND '${endGoogle}'`;
     
-    const googleResults = await customer.query(googleQuery);
+    let googleResults = [];
+    try {
+      googleResults = await customer.query(googleQuery);
+    } catch (gErr) {
+      console.error("Google Ads Error:", gErr.message);
+      // Agar Google fail ho, toh error return karein
+      return NextResponse.json({ success: false, error: `Google Ads API: ${gErr.message}` }, { status: 500 });
+    }
     
     const googleMap = {};
     for (const row of googleResults) {
@@ -42,14 +46,21 @@ export async function GET(request) {
       googleMap[sku].cost += (row.metrics?.cost_micros || 0) / 1000000;
     }
 
-    // 2. WooCommerce Data (ISO format)
+    // 2. Fetch WooCommerce Data
     const wooClient = getWooCommerceClient();
-    const { data: orders } = await wooClient.get('orders', {
-      after: startDate.toISOString(),
-      before: endDate.toISOString(),
-      per_page: 100,
-      status: 'processing,completed'
-    });
+    let orders = [];
+    try {
+      const response = await wooClient.get('orders', {
+        after: startDate.toISOString(),
+        before: endDate.toISOString(),
+        per_page: 100,
+        status: 'processing,completed'
+      });
+      orders = response.data;
+    } catch (wErr) {
+      console.error("WooCommerce Error:", wErr.message);
+      return NextResponse.json({ success: false, error: `WooCommerce API (403/Forbidden): ${wErr.message}. Check Server Firewall.` }, { status: 403 });
+    }
 
     const wooMap = {};
     for (const order of orders) {
@@ -71,10 +82,10 @@ export async function GET(request) {
       const conv = g.clicks > 0 ? (w.count / g.clicks) * 100 : 0;
 
       let rec = 'Check Data';
-      if (acos < 15 && w.count >= 5) rec = 'Do Nothing (Optimal)';
-      else if (acos < 15 && w.count < 5) rec = 'Increase Bid (Growth Opp)';
-      else if (acos >= 15 && conv < 1) rec = 'Reduce Bid (Low Efficiency)';
-      else if (acos >= 15 && conv >= 1) rec = 'Reduce Price (Price Resistance)';
+      if (acos < 15 && w.count >= 5) rec = '✅ Do Nothing (Optimal)';
+      else if (acos < 15 && w.count < 5) rec = '🚀 Increase Bid (Growth Opp)';
+      else if (acos >= 15 && conv < 1) rec = '📉 Reduce Bid (Low Efficiency)';
+      else if (acos >= 15 && conv >= 1) rec = '💰 Reduce Price (Price Resistance)';
 
       return {
         sku: sku.toUpperCase(),
