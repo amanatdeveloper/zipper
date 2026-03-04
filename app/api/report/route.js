@@ -21,7 +21,7 @@ export async function GET(request) {
     const startGoogle = formatDateGoogle(startDate);
     const endGoogle = formatDateGoogle(endDate);
 
-    // 1. Fetch Google Ads Data
+    // 1. Fetch Google Ads Data (As-Is)
     const customer = getGoogleAdsClient();
     const googleQuery = `
       SELECT segments.product_item_id, metrics.clicks, metrics.cost_micros 
@@ -33,7 +33,6 @@ export async function GET(request) {
       googleResults = await customer.query(googleQuery);
     } catch (gErr) {
       console.error("Google Ads Error:", gErr.message);
-      // Agar Google fail ho, toh error return karein
       return NextResponse.json({ success: false, error: `Google Ads API: ${gErr.message}` }, { status: 500 });
     }
     
@@ -46,60 +45,27 @@ export async function GET(request) {
       googleMap[sku].cost += (row.metrics?.cost_micros || 0) / 1000000;
     }
 
-    // 2. Fetch WooCommerce Data
-    const wooClient = getWooCommerceClient();
-    let orders = [];
+    // 2. Fetch WooCommerce Data (DEBUG VERSION)
     try {
-      const response = await wooClient.get('orders', {
-        after: startDate.toISOString(),
-        before: endDate.toISOString(),
-        per_page: 100,
-        status: 'processing,completed'
+      // Directly fetch using URL to test environment variable
+      const url = `${process.env.WOO_URL}/wp-json/wc/v3/orders?consumer_key=${process.env.WOO_CK}&consumer_secret=${process.env.WOO_CS}&per_page=5`;
+      const res = await fetch(url);
+      const data = await res.json();
+      console.log("DEBUG WOO RESPONSE:", data);
+
+      // Temporarily return this to see WooCommerce API output
+      return NextResponse.json({
+        success: true,
+        debugWoo: data
       });
-      orders = response.data;
+
     } catch (wErr) {
-      console.error("WooCommerce Error:", wErr.message);
-      return NextResponse.json({ success: false, error: `WooCommerce API (403/Forbidden): ${wErr.message}. Check Server Firewall.` }, { status: 403 });
+      console.error("DEBUG WooCommerce Error:", wErr.message);
+      return NextResponse.json({
+        success: false,
+        error: `WooCommerce DEBUG API: ${wErr.message}`
+      }, { status: 500 });
     }
-
-    const wooMap = {};
-    for (const order of orders) {
-      for (const item of order.line_items || []) {
-        const sku = (item.sku || '').toLowerCase().trim();
-        if (!sku) continue;
-        if (!wooMap[sku]) wooMap[sku] = { rev: 0, count: 0 };
-        wooMap[sku].rev += parseFloat(item.total || 0);
-        wooMap[sku].count += 1;
-      }
-    }
-
-    // 3. Merge & Omar's Rules
-    const allSkus = new Set([...Object.keys(googleMap), ...Object.keys(wooMap)]);
-    const report = Array.from(allSkus).map(sku => {
-      const g = googleMap[sku] || { clicks: 0, cost: 0 };
-      const w = wooMap[sku] || { rev: 0, count: 0 };
-      const acos = w.rev > 0 ? (g.cost / w.rev) * 100 : 0;
-      const conv = g.clicks > 0 ? (w.count / g.clicks) * 100 : 0;
-
-      let rec = 'Check Data';
-      if (acos < 15 && w.count >= 5) rec = '✅ Do Nothing (Optimal)';
-      else if (acos < 15 && w.count < 5) rec = '🚀 Increase Bid (Growth Opp)';
-      else if (acos >= 15 && conv < 1) rec = '📉 Reduce Bid (Low Efficiency)';
-      else if (acos >= 15 && conv >= 1) rec = '💰 Reduce Price (Price Resistance)';
-
-      return {
-        sku: sku.toUpperCase(),
-        clicks: g.clicks,
-        adCost: g.cost.toFixed(2),
-        revenue: w.rev.toFixed(2),
-        salesCount: w.count,
-        acos: acos.toFixed(2),
-        convRate: conv.toFixed(2),
-        recommendation: rec
-      };
-    });
-
-    return NextResponse.json({ success: true, data: report.sort((a,b) => b.revenue - a.revenue) });
 
   } catch (error) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
