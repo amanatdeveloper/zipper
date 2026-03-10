@@ -3,6 +3,28 @@ import { getGoogleAdsClient, getWooCommerceClient } from '../../../lib/api-clien
 
 export async function GET(request) {
   try {
+    // Check if environment variables are loaded
+    const requiredEnv = [
+      'GOOGLE_CLIENT_ID', 
+      'GOOGLE_CLIENT_SECRET', 
+      'GOOGLE_REFRESH_TOKEN', 
+      'GOOGLE_CUSTOMER_ID',
+      'WOO_URL',
+      'WOO_CK',
+      'WOO_CS'
+    ];
+
+    const missing = requiredEnv.filter(k => !process.env[k]);
+    
+    if (missing.length > 0) {
+      console.error("Missing Env Vars:", missing);
+      return NextResponse.json({ 
+        success: false, 
+        error: `Missing: ${missing.join(', ')}`,
+        environment: "Production/Custom Server" 
+      }, { status: 500 });
+    }
+
     const { searchParams } = new URL(request.url);
     const startParam = searchParams.get('start');
     const endParam = searchParams.get('end');
@@ -59,14 +81,12 @@ export async function GET(request) {
       }
     }
 
-    // 3. Final Merge with Omar's Logic Metrics
+    // 3. Final Merge
     const allSkus = new Set([...Object.keys(googleMap), ...Object.keys(wooMap)]);
     const report = Array.from(allSkus).map(sku => {
       const g = googleMap[sku] || { clicks: 0, cost: 0 };
       const w = wooMap[sku] || { rev: 0, count: 0 };
-      
       const acos = w.rev > 0 ? (g.cost / w.rev) * 100 : 0;
-      // Conversion Rate calculation (Sales / Clicks)
       const convRate = g.clicks > 0 ? (w.count / g.clicks) * 100 : 0;
 
       return {
@@ -76,13 +96,13 @@ export async function GET(request) {
         revenue: w.rev.toFixed(2),
         salesCount: w.count,
         acos: acos.toFixed(2),
-        convRate: convRate.toFixed(2) // Frontend needs this for Omar's price logic
+        convRate: convRate.toFixed(2)
       };
     });
 
     return NextResponse.json({ 
       success: true, 
-      data: report.sort((a, b) => b.clicks - a.clicks) // Sorting by clicks to show high-traffic items first
+      data: report.sort((a, b) => b.clicks - a.clicks) 
     });
 
   } catch (error) {
