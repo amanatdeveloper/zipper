@@ -4,13 +4,12 @@ import { getGoogleAdsClient, getWooCommerceClient } from '../../../lib/api-clien
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
-
     const startParam = searchParams.get('start');
     const endParam = searchParams.get('end');
-
+    
     let startDate = new Date();
     let endDate = new Date();
-
+    
     if (startParam && endParam) {
       startDate = new Date(startParam);
       endDate = new Date(endParam);
@@ -18,106 +17,57 @@ export async function GET(request) {
       startDate.setDate(startDate.getDate() - 30);
     }
 
-    const formatDateGoogle = (date) =>
-      date.toISOString().split('T')[0].replace(/-/g, '');
-
+    const formatDateGoogle = (date) => date.toISOString().split('T')[0].replace(/-/g, '');
     const startGoogle = formatDateGoogle(startDate);
     const endGoogle = formatDateGoogle(endDate);
 
-    // ===============================
-    // Google Ads Data Fetch
-    // ===============================
-
+    // 1. Fetch Google Ads Data
     const customer = getGoogleAdsClient();
-
     const googleQuery = `
       SELECT segments.product_item_id, metrics.clicks, metrics.cost_micros 
       FROM shopping_performance_view 
-      WHERE segments.date BETWEEN '${startGoogle}' AND '${endGoogle}'
-    `;
-
-    let googleResults = [];
-
-    try {
-      googleResults = await customer.query(googleQuery);
-    } catch (gErr) {
-      return NextResponse.json({
-        success: false,
-        error: "Google Ads API Error: " + gErr.message
-      }, { status: 500 });
-    }
-
+      WHERE segments.date BETWEEN '${startGoogle}' AND '${endGoogle}'`;
+    
+    const googleResults = await customer.query(googleQuery);
     const googleMap = {};
 
     for (const row of googleResults) {
       const sku = (row.segments?.product_item_id || '').toLowerCase().trim();
       if (!sku) continue;
-
-      if (!googleMap[sku])
-        googleMap[sku] = { clicks: 0, cost: 0 };
-
-      googleMap[sku].clicks += row.metrics?.clicks || 0;
-      googleMap[sku].cost += (row.metrics?.cost_micros || 0) / 1000000;
+      if (!googleMap[sku]) googleMap[sku] = { clicks: 0, cost: 0 };
+      googleMap[sku].clicks += parseInt(row.metrics?.clicks || 0);
+      googleMap[sku].cost += (parseFloat(row.metrics?.cost_micros || 0) / 1000000);
     }
 
-    // ===============================
-    // WooCommerce Data Fetch (Stable Version)
-    // ===============================
-
+    // 2. Fetch WooCommerce Data
     const wooClient = getWooCommerceClient();
-
-    const response = await wooClient.get("orders", {
+    const response = await wooClient.get('orders', {
       after: startDate.toISOString(),
       before: endDate.toISOString(),
       per_page: 100,
-      status: ["processing", "completed"]
+      status: 'processing,completed'
     });
 
-    const orders = response.data || [];
-
     const wooMap = {};
-
-    for (const order of orders) {
+    for (const order of response.data) {
       for (const item of order.line_items || []) {
-
         const sku = (item.sku || '').toLowerCase().trim();
         if (!sku) continue;
-
-        if (!wooMap[sku])
-          wooMap[sku] = { rev: 0, count: 0 };
-
+        if (!wooMap[sku]) wooMap[sku] = { rev: 0, count: 0 };
         wooMap[sku].rev += parseFloat(item.total || 0);
         wooMap[sku].count += 1;
       }
     }
 
-    // ===============================
-    // Merge Analytics
-    // ===============================
-
-    const allSkus = new Set([
-      ...Object.keys(googleMap),
-      ...Object.keys(wooMap)
-    ]);
-
+    // 3. Final Merge with Omar's Logic Metrics
+    const allSkus = new Set([...Object.keys(googleMap), ...Object.keys(wooMap)]);
     const report = Array.from(allSkus).map(sku => {
-
       const g = googleMap[sku] || { clicks: 0, cost: 0 };
       const w = wooMap[sku] || { rev: 0, count: 0 };
-
+      
       const acos = w.rev > 0 ? (g.cost / w.rev) * 100 : 0;
-      const conv = g.clicks > 0 ? (w.count / g.clicks) * 100 : 0;
-
-      let rec = "Check Data";
-
-      if (acos < 15 && w.count >= 5)
-        rec = "✅ Do Nothing (Optimal)";
-      else if (acos < 15 && w.count < 5)
-        rec = "🚀 Increase Bid (Growth Opp)";
-      else if (acos >= 15 && conv < 1)
-        rec = "📉 Reduce Bid (Low Efficiency)";
-      else if (acos >= 15 && conv >= 1)
-        rec = "💰 Reduce Price (Price Resistance)";
+      // Conversion Rate calculation (Sales / Clicks)
+      const convRate = g.clicks > 0 ? (w.count / g.clicks) * 100 : 0;
 
       return {
         sku: sku.toUpperCase(),
@@ -126,20 +76,17 @@ export async function GET(request) {
         revenue: w.rev.toFixed(2),
         salesCount: w.count,
         acos: acos.toFixed(2),
-        convRate: conv.toFixed(2),
-        recommendation: rec
+        convRate: convRate.toFixed(2) // Frontend needs this for Omar's price logic
       };
     });
 
-    return NextResponse.json({
-      success: true,
-      data: report.sort((a, b) => b.revenue - a.revenue)
+    return NextResponse.json({ 
+      success: true, 
+      data: report.sort((a, b) => b.clicks - a.clicks) // Sorting by clicks to show high-traffic items first
     });
 
   } catch (error) {
-    return NextResponse.json({
-      success: false,
-      error: error.message
-    }, { status: 500 });
+    console.error("API Error:", error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
