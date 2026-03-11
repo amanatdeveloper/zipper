@@ -1,30 +1,112 @@
 ﻿import { NextResponse } from 'next/server';
-import { getGoogleAdsClient } from '../../../lib/api-clients.js';
+import { getGoogleAdsClient, getWooCommerceClient } from '../../../lib/api-clients.js';
 
 export async function GET(request) {
   try {
+    // Check if environment variables are loaded
+    const requiredEnv = [
+      'GOOGLE_CLIENT_ID', 
+      'GOOGLE_CLIENT_SECRET', 
+      'GOOGLE_REFRESH_TOKEN', 
+      'GOOGLE_CUSTOMER_ID',
+      'WOO_URL',
+      'WOO_CK',
+      'WOO_CS'
+    ];
+
+    const missing = requiredEnv.filter(k => !process.env[k]);
+    
+    if (missing.length > 0) {
+      console.error("Missing Env Vars:", missing);
+      return NextResponse.json({ 
+        success: false, 
+        error: `Missing: ${missing.join(', ')}`,
+        environment: "Production/Custom Server" 
+      }, { status: 500 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const startParam = searchParams.get('start');
+    const endParam = searchParams.get('end');
+    
+    let startDate = new Date();
+    let endDate = new Date();
+    
+    if (startParam && endParam) {
+      startDate = new Date(startParam);
+      endDate = new Date(endParam);
+    } else {
+      startDate.setDate(startDate.getDate() - 30);
+    }
+
+    const formatDateGoogle = (date) => date.toISOString().split('T')[0].replace(/-/g, '');
+    const startGoogle = formatDateGoogle(startDate);
+    const endGoogle = formatDateGoogle(endDate);
+
+    // 1. Fetch Google Ads Data
     const customer = getGoogleAdsClient();
-    
-    // Sirf testing ke liye aik simple query
     const googleQuery = `
-      SELECT metrics.clicks 
+      SELECT segments.product_item_id, metrics.clicks, metrics.cost_micros 
       FROM shopping_performance_view 
-      WHERE segments.date DURING LAST_30_DAYS 
-      LIMIT 1`;
+      WHERE segments.date BETWEEN '${startGoogle}' AND '${endGoogle}'`;
     
-    await customer.query(googleQuery);
+    const googleResults = await customer.query(googleQuery);
+    const googleMap = {};
+
+    for (const row of googleResults) {
+      const sku = (row.segments?.product_item_id || '').toLowerCase().trim();
+      if (!sku) continue;
+      if (!googleMap[sku]) googleMap[sku] = { clicks: 0, cost: 0 };
+      googleMap[sku].clicks += parseInt(row.metrics?.clicks || 0);
+      googleMap[sku].cost += (parseFloat(row.metrics?.cost_micros || 0) / 1000000);
+    }
+
+    // 2. Fetch WooCommerce Data
+    const wooClient = getWooCommerceClient();
+    const response = await wooClient.get('orders', {
+      after: startDate.toISOString(),
+      before: endDate.toISOString(),
+      per_page: 100,
+      status: 'processing,completed'
+    });
+
+    const wooMap = {};
+    for (const order of response.data) {
+      for (const item of order.line_items || []) {
+        const sku = (item.sku || '').toLowerCase().trim();
+        if (!sku) continue;
+        if (!wooMap[sku]) wooMap[sku] = { rev: 0, count: 0 };
+        wooMap[sku].rev += parseFloat(item.total || 0);
+        wooMap[sku].count += 1;
+      }
+    }
+
+    // 3. Final Merge
+    const allSkus = new Set([...Object.keys(googleMap), ...Object.keys(wooMap)]);
+    const report = Array.from(allSkus).map(sku => {
+      const g = googleMap[sku] || { clicks: 0, cost: 0 };
+      const w = wooMap[sku] || { rev: 0, count: 0 };
+      const acos = w.rev > 0 ? (g.cost / w.rev) * 100 : 0;
+      const convRate = g.clicks > 0 ? (w.count / g.clicks) * 100 : 0;
+
+      return {
+        sku: sku.toUpperCase(),
+        clicks: g.clicks,
+        adCost: g.cost.toFixed(2),
+        revenue: w.rev.toFixed(2),
+        salesCount: w.count,
+        acos: acos.toFixed(2),
+        convRate: convRate.toFixed(2)
+      };
+    });
 
     return NextResponse.json({ 
       success: true, 
-      message: "Google Ads connection is SUCCESSFUL. Only WooCommerce is blocked by Cloudflare." 
+      data: report.sort((a, b) => b.clicks - a.clicks) 
     });
 
   } catch (error) {
-    console.error("Debug Error:", error);
-    return NextResponse.json({ 
-      success: false, 
-      error: "Google Ads also failed: " + error.message,
-      tip: "Check if Google Cloud Console has this server IP whitelisted in Redirect URIs"
-    });
+    console.error("API Error:", error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
