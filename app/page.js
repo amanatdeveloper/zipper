@@ -1,32 +1,26 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, TrendingUp, Settings, Target, Info, AlertCircle } from 'lucide-react';
+import { RefreshCw, TrendingUp, Settings, Edit2, Code, ShieldCheck } from 'lucide-react';
 
 export default function Dashboard() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [range, setRange] = useState('30');
   const [startDate, setStartDate] = useState(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
 
-  const [globalTargets, setGlobalTargets] = useState({
-    sales: 5,
-    acos: 15,
-    conv: 1.0 // Omar's 1% target (1 sale per 100 clicks)
-  });
-
+  const [globalTargets, setGlobalTargets] = useState({ sales: 5, acos: 15, conv: 1.0 });
   const [productTargets, setProductTargets] = useState({});
 
   useEffect(() => {
-    const savedGlobal = localStorage.getItem('zippper_global_targets');
-    const savedProduct = localStorage.getItem('zippper_product_targets');
+    const savedGlobal = localStorage.getItem('zipper_global_targets');
+    const savedProduct = localStorage.getItem('zipper_product_targets');
     if (savedGlobal) setGlobalTargets(JSON.parse(savedGlobal));
     if (savedProduct) setProductTargets(JSON.parse(savedProduct));
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('zippper_global_targets', JSON.stringify(globalTargets));
-    localStorage.setItem('zippper_product_targets', JSON.stringify(productTargets));
+    localStorage.setItem('zipper_global_targets', JSON.stringify(globalTargets));
+    localStorage.setItem('zipper_product_targets', JSON.stringify(productTargets));
   }, [globalTargets, productTargets]);
 
   const fetchData = useCallback(async () => {
@@ -35,11 +29,7 @@ export default function Dashboard() {
       const res = await fetch(`/api/report?start=${startDate}&end=${endDate}`);
       const result = await res.json();
       if (result.success) setData(result.data);
-    } catch (e) {
-      console.error("Fetch error:", e);
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { console.error(e); } finally { setLoading(false); }
   }, [startDate, endDate]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -49,137 +39,132 @@ export default function Dashboard() {
     return productTargets[skuKey]?.[type] || globalTargets[type];
   };
 
-  // --- Omar's Refined Logic ---
   const getDynamicRec = (row) => {
     const targetACOS = parseFloat(getTarget(row.sku, 'acos'));
-    const targetSales = parseFloat(getTarget(row.sku, 'sales'));
     const targetConv = parseFloat(getTarget(row.sku, 'conv'));
-
-    const currentAcos = parseFloat(row.acos);
-    const currentConv = parseFloat(row.convRate);
-    const clicks = parseInt(row.clicks);
-    const salesCount = parseInt(row.salesCount);
-
-    // 1. High Traffic but No/Low Sales (Omar's VHE-MOB1 Example)
-    // If clicks are high but conversion is below target, it's a pricing/product issue
-    if (clicks >= 100 && currentConv < targetConv) {
-      return '💰 Reduce Price (Price Resistance)';
-    }
-
-    // 2. High ACOS & Low Conversion
-    if (currentAcos > targetACOS && currentConv < targetConv) {
-      return '📉 Reduce Bid (Low Efficiency)';
-    }
-
-    // 3. Optimal Performance
-    if (currentAcos <= targetACOS && salesCount >= targetSales) {
-      return '✅ Optimal Performance';
-    }
-
-    // 4. Growth Opportunity
-    if (currentAcos <= targetACOS && salesCount < targetSales) {
-      return '🚀 Increase Bid (Growth Opp)';
-    }
-
-    return 'Analyzing Market Data...';
+    const targetSales = parseFloat(getTarget(row.sku, 'sales'));
+    
+    if (parseInt(row.clicks) >= 100 && parseFloat(row.convRate) < targetConv) return '💰 Reduce Price (Low Conv)';
+    if (parseFloat(row.acos) > targetACOS && parseFloat(row.convRate) < targetConv) return '📉 Reduce Bid (High ACOS)';
+    if (parseFloat(row.acos) <= targetACOS && parseInt(row.salesCount) >= targetSales) return '✅ Optimal Performance';
+    return '🚀 Scale Bids (Healthy)';
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
-      <header className="bg-white border-b sticky top-0 z-20 shadow-sm p-4">
-        <div className="max-w-7xl mx-auto flex flex-wrap justify-between items-center gap-4">
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-24 text-[13px]">
+      {/* Header */}
+      <header className="bg-white border-b sticky top-0 z-30 p-3 shadow-sm">
+        <div className="max-w-[1600px] mx-auto flex flex-wrap justify-between items-center gap-4">
           <div className="flex items-center gap-2">
-            <TrendingUp className="text-blue-600 w-8 h-8" />
-            <h1 className="text-xl font-bold text-slate-900 italic">Zipper Dashboard</h1>
+            <TrendingUp className="text-blue-600 w-7 h-7" />
+            <h1 className="text-lg font-black tracking-tight uppercase">Zipper <span className="text-blue-600">Ads Engine</span></h1>
           </div>
-          <div className="flex gap-3 items-center">
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border p-2 rounded text-sm bg-slate-50" />
-            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="border p-2 rounded text-sm bg-slate-50" />
-            <button onClick={fetchData} className="bg-blue-600 text-white px-6 py-2 rounded-lg flex gap-2 items-center hover:bg-blue-700 shadow-md">
-              <RefreshCw className={loading ? 'animate-spin' : ''} size={18} /> Sync Data
+          <div className="flex items-center gap-3">
+            <div className="flex bg-slate-100 rounded-lg p-1 border border-slate-200">
+              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="bg-transparent text-[11px] p-1 outline-none border-none font-bold" />
+              <span className="text-slate-400 self-center px-1">-</span>
+              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="bg-transparent text-[11px] p-1 outline-none border-none font-bold" />
+            </div>
+            <button onClick={fetchData} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 shadow-md transition-all active:scale-95">
+              <RefreshCw className={loading ? 'animate-spin' : ''} size={16} />
+              <span className="font-bold text-xs uppercase tracking-wider">Sync Now</span>
             </button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto p-4 md:p-8 space-y-6">
-        {/* Targets Summary Card */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-white p-4 rounded-xl border shadow-sm flex flex-col">
-                <span className="text-xs font-bold text-slate-400">GLOBAL TARGET ACOS</span>
-                <div className="flex items-center gap-2">
-                    <input type="number" value={globalTargets.acos} onChange={(e) => setGlobalTargets({...globalTargets, acos: e.target.value})} className="text-2xl font-bold text-slate-800 w-20 outline-none" />
-                    <span className="text-xl text-slate-400">%</span>
+      <main className="max-w-[1600px] mx-auto p-4 md:p-6 space-y-6">
+        {/* Global Editable Targets */}
+        <section className="bg-white p-6 rounded-2xl border border-slate-200 shadow-lg relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-600"></div>
+          <div className="flex items-center gap-2 mb-5">
+            <Settings className="text-slate-400" size={18} />
+            <h2 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Global Strategy Configuration</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
+            {[
+              { label: 'Target ACOS %', key: 'acos', step: '1' },
+              { label: 'Min Conv Rate %', key: 'conv', step: '0.1' },
+              { label: 'Min Sales Target', key: 'sales', step: '1' }
+            ].map((field) => (
+              <div key={field.key} className="group">
+                <label className="block text-[9px] font-black text-slate-400 mb-1 uppercase tracking-widest">{field.label}</label>
+                <div className="relative border-b-2 border-slate-100 group-hover:border-blue-200 transition-colors">
+                  <input 
+                    type="number" 
+                    step={field.step}
+                    value={globalTargets[field.key]} 
+                    onChange={(e) => setGlobalTargets({...globalTargets, [field.key]: e.target.value})} 
+                    className="w-full text-4xl font-black text-slate-800 bg-transparent outline-none py-1 pr-10"
+                  />
+                  <Edit2 className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-200 group-hover:text-blue-500 transition-colors" size={18} />
                 </div>
-            </div>
-            <div className="bg-white p-4 rounded-xl border shadow-sm flex flex-col">
-                <span className="text-xs font-bold text-slate-400">MIN. CONV. RATE</span>
-                <div className="flex items-center gap-2">
-                    <input type="number" step="0.1" value={globalTargets.conv} onChange={(e) => setGlobalTargets({...globalTargets, conv: e.target.value})} className="text-2xl font-bold text-slate-800 w-20 outline-none" />
-                    <span className="text-xl text-slate-400">%</span>
-                </div>
-            </div>
-            <div className="bg-white p-4 rounded-xl border shadow-sm flex flex-col">
-                <span className="text-xs font-bold text-slate-400">TARGET SALES</span>
-                <div className="flex items-center gap-2">
-                    <input type="number" value={globalTargets.sales} onChange={(e) => setGlobalTargets({...globalTargets, sales: e.target.value})} className="text-2xl font-bold text-slate-800 w-20 outline-none" />
-                    <span className="text-xl text-slate-400">Units</span>
-                </div>
-            </div>
-        </div>
+              </div>
+            ))}
+          </div>
+        </section>
 
-        {/* Product Table */}
-        <div className="bg-white shadow-sm rounded-xl border border-slate-200 overflow-hidden">
+        {/* Data Table */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-slate-500 font-semibold border-b">
-                <tr>
-                  <th className="p-4 text-left">SKU / LOCAL TARGETS</th>
-                  <th className="p-4 text-right">CLICKS</th>
-                  <th className="p-4 text-right">AD COST</th>
-                  <th className="p-4 text-right">REVENUE</th>
-                  <th className="p-4 text-right">SALES</th>
-                  <th className="p-4 text-right">ACOS</th>
-                  <th className="p-4 text-left">STRATEGY</th>
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-900 text-white uppercase text-[9px] tracking-[0.15em] font-black">
+                  <th className="p-4 border-r border-slate-800">SKU & Performance Targets</th>
+                  <th className="p-4 text-center">Clicks</th>
+                  <th className="p-4 text-center">Ad Cost</th>
+                  <th className="p-4 text-center">Sales</th>
+                  <th className="p-4 text-center">Revenue</th>
+                  <th className="p-4 text-center">ACOS %</th>
+                  <th className="p-4 text-center">Conv %</th>
+                  <th className="p-4">AI Strategy & Recommendation</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {data.map((row) => (
-                  <tr key={row.sku} className="hover:bg-slate-50 transition-colors">
-                    <td className="p-4">
-                      <div className="font-bold text-slate-900">{row.sku}</div>
-                      <div className="flex gap-2 mt-1">
-                        <input 
+                  <tr key={row.sku} className="group hover:bg-slate-50/80 transition-all">
+                    <td className="p-4 border-r border-slate-50">
+                      <div className="font-black text-slate-900 text-base mb-2 tracking-tight">{row.sku}</div>
+                      <div className="flex gap-3">
+                        <div className="flex-1">
+                          <span className="text-[8px] font-black text-slate-400 uppercase block mb-1">Target ACOS</span>
+                          <input 
                             type="number" 
-                            placeholder={`ACOS ${globalTargets.acos}%`}
+                            placeholder={`${globalTargets.acos}%`}
                             value={productTargets[row.sku.toLowerCase()]?.acos || ''} 
                             onChange={(e) => setProductTargets({...productTargets, [row.sku.toLowerCase()]: {...(productTargets[row.sku.toLowerCase()] || {}), acos: e.target.value}})}
-                            className="w-16 border rounded px-1 text-[10px]"
-                        />
-                        <input 
+                            className="w-full bg-slate-50 border border-slate-200 rounded-md p-1.5 text-xs font-bold focus:ring-1 focus:ring-blue-500 outline-none"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <span className="text-[8px] font-black text-slate-400 uppercase block mb-1">Min Conv %</span>
+                          <input 
                             type="number" 
-                            placeholder={`Sales ${globalTargets.sales}`}
-                            value={productTargets[row.sku.toLowerCase()]?.sales || ''} 
-                            onChange={(e) => setProductTargets({...productTargets, [row.sku.toLowerCase()]: {...(productTargets[row.sku.toLowerCase()] || {}), sales: e.target.value}})}
-                            className="w-16 border rounded px-1 text-[10px]"
-                        />
+                            step="0.1"
+                            placeholder={`${globalTargets.conv}%`}
+                            value={productTargets[row.sku.toLowerCase()]?.conv || ''} 
+                            onChange={(e) => setProductTargets({...productTargets, [row.sku.toLowerCase()]: {...(productTargets[row.sku.toLowerCase()] || {}), conv: e.target.value}})}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-md p-1.5 text-xs font-bold focus:ring-1 focus:ring-blue-500 outline-none"
+                          />
+                        </div>
                       </div>
                     </td>
-                    <td className="p-4 text-right font-medium">{row.clicks}</td>
-                    <td className="p-4 text-right text-slate-500">£{row.adCost}</td>
-                    <td className="p-4 text-right font-bold text-slate-800">£{row.revenue}</td>
-                    <td className="p-4 text-right font-bold text-blue-600">{row.salesCount}</td>
-                    <td className="p-4 text-right">
-                      <div className={`inline-block px-2 py-1 rounded text-xs font-bold ${parseFloat(row.acos) <= getTarget(row.sku, 'acos') ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
+                    <td className="p-4 text-center font-bold text-slate-500">{row.clicks}</td>
+                    <td className="p-4 text-center font-bold text-red-500">£{row.adCost}</td>
+                    <td className="p-4 text-center font-black text-blue-600 bg-blue-50/30">{row.salesCount}</td>
+                    <td className="p-4 text-center font-black text-slate-900 text-sm">£{row.revenue}</td>
+                    <td className="p-4 text-center">
+                      <div className={`inline-block px-3 py-1 rounded-full font-black text-[10px] ${parseFloat(row.acos) <= getTarget(row.sku, 'acos') ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
                         {row.acos}%
                       </div>
                     </td>
+                    <td className="p-4 text-center font-black text-slate-700">{row.convRate}%</td>
                     <td className="p-4">
-                      <div className="flex flex-col">
-                        <span className={`font-bold ${getDynamicRec(row).includes('Reduce Price') ? 'text-orange-600' : 'text-slate-700'}`}>
-                          {getDynamicRec(row)}
-                        </span>
-                        <span className="text-[10px] text-slate-400">Based on {getTarget(row.sku, 'conv')}% Conv. Target</span>
+                      <div className="p-3 rounded-xl border border-slate-100 bg-white shadow-sm">
+                        <div className="font-black text-slate-800 text-xs mb-1">{getDynamicRec(row)}</div>
+                        <div className="text-[8px] font-bold text-slate-400 uppercase">
+                          Threshold: {getTarget(row.sku, 'acos')}% ACOS / {getTarget(row.sku, 'conv')}% Conv
+                        </div>
                       </div>
                     </td>
                   </tr>
@@ -189,8 +174,16 @@ export default function Dashboard() {
           </div>
         </div>
       </main>
-      <footer className="text-center p-8 text-slate-400 text-xs">
-        Powered by AI Logic | Property of Zipper Scooters
+      
+      <footer className="fixed bottom-0 w-full bg-slate-900 border-t border-slate-800 p-4 flex justify-between px-8 text-[9px] font-black uppercase tracking-[0.2em] z-40">
+        <div className="flex items-center gap-6">
+            <span className="flex items-center gap-1.5 text-emerald-500"><ShieldCheck size={12}/> System Live</span>
+            <span className="text-slate-500 border-l border-slate-800 pl-6">Zipper Dashboard &copy; 2026</span>
+        </div>
+        <div className="flex items-center gap-2">
+            <Code size={12} className="text-blue-500"/>
+            <span className="text-slate-500">Built by <span className="text-white">Amanat Developers</span></span>
+        </div>
       </footer>
     </div>
   );
