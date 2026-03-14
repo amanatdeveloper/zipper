@@ -2,6 +2,8 @@
 import { getGoogleAdsClient, getWooCommerceClient } from '../../../lib/api-clients.js';
 import { prisma } from '../../../lib/prisma.js';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
