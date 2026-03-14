@@ -1,8 +1,14 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, TrendingUp, Settings, Edit2, Code, ShieldCheck } from 'lucide-react';
+import { useSession } from 'next-auth/react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { RefreshCw, TrendingUp, Settings, Edit2, Code, ShieldCheck, Store } from 'lucide-react';
 
 export default function Dashboard() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [store, setStore] = useState(null);
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [startDate, setStartDate] = useState(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
@@ -10,6 +16,40 @@ export default function Dashboard() {
 
   const [globalTargets, setGlobalTargets] = useState({ sales: 5, acos: 15, conv: 1.0 });
   const [productTargets, setProductTargets] = useState({});
+
+  useEffect(() => {
+    if (status === 'loading') return;
+    if (!session) {
+      router.push('/login');
+      return;
+    }
+
+    // Check if storeId is present in URL
+    const storeId = searchParams.get('storeId');
+    if (!storeId) {
+      router.push('/stores');
+      return;
+    }
+
+    // Fetch store details
+    fetchStore(storeId);
+  }, [session, status, router, searchParams]);
+
+  const fetchStore = async (storeId) => {
+    try {
+      const res = await fetch(`/api/stores/${storeId}`);
+      const result = await res.json();
+      if (result.success) {
+        setStore(result.data);
+      } else {
+        // If store not found or access denied, redirect to stores page
+        router.push('/stores');
+      }
+    } catch (e) {
+      console.error(e);
+      router.push('/stores');
+    }
+  };
 
   useEffect(() => {
     const savedGlobal = localStorage.getItem('zipper_global_targets');
@@ -24,15 +64,24 @@ export default function Dashboard() {
   }, [globalTargets, productTargets]);
 
   const fetchData = useCallback(async () => {
+    const storeId = searchParams.get('storeId');
+    if (!storeId) return;
+    
     setLoading(true);
     try {
-      const res = await fetch(`/api/report?start=${startDate}&end=${endDate}`);
+      const res = await fetch(`/api/report?storeId=${storeId}&start=${startDate}&end=${endDate}`);
       const result = await res.json();
       if (result.success) setData(result.data);
-    } catch (e) { console.error(e); } finally { setLoading(false); }
-  }, [startDate, endDate]);
+    } catch (e) { 
+      console.error(e); 
+    } finally { 
+      setLoading(false); 
+    }
+  }, [searchParams, startDate, endDate]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { 
+    if (store) fetchData(); 
+  }, [fetchData, store]);
 
   const getTarget = (sku, type) => {
     const skuKey = sku.toLowerCase();
@@ -50,6 +99,14 @@ export default function Dashboard() {
     return '🚀 Scale Bids (Healthy)';
   };
 
+  if (status === 'loading') {
+    return <div className="min-h-screen bg-slate-50 flex items-center justify-center">Loading...</div>;
+  }
+
+  if (!session) {
+    return null;
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-24 text-[13px]">
       {/* Header */}
@@ -60,6 +117,19 @@ export default function Dashboard() {
             <h1 className="text-lg font-black tracking-tight uppercase">Zipper <span className="text-blue-600">Ads Engine</span></h1>
           </div>
           <div className="flex items-center gap-3">
+            <a
+              href="/stores"
+              className="text-slate-600 hover:text-slate-900 px-3 py-2 rounded-lg border border-slate-200 hover:border-slate-300 transition-colors"
+            >
+              ← Back to Stores
+            </a>
+            {/* Current Store Display */}
+            <div className="flex items-center gap-2 bg-slate-100 px-3 py-2 rounded-lg border border-slate-200">
+              <Store className="text-slate-600" size={16} />
+              <span className="text-sm font-bold text-slate-900">
+                {store ? store.name : 'Loading...'}
+              </span>
+            </div>
             <div className="flex bg-slate-100 rounded-lg p-1 border border-slate-200">
               <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="bg-transparent text-[11px] p-1 outline-none border-none font-bold" />
               <span className="text-slate-400 self-center px-1">-</span>

@@ -1,34 +1,33 @@
 ﻿import { NextResponse } from 'next/server';
 import { getGoogleAdsClient, getWooCommerceClient } from '../../../lib/api-clients.js';
+import { prisma } from '../../../lib/prisma.js';
 
 export async function GET(request) {
   try {
-    // Check if environment variables are loaded
-    const requiredEnv = [
-      'GOOGLE_CLIENT_ID', 
-      'GOOGLE_CLIENT_SECRET', 
-      'GOOGLE_REFRESH_TOKEN', 
-      'GOOGLE_CUSTOMER_ID',
-      'WOO_URL',
-      'WOO_CK',
-      'WOO_CS'
-    ];
-
-    const missing = requiredEnv.filter(k => !process.env[k]);
-    
-    if (missing.length > 0) {
-      console.error("Missing Env Vars:", missing);
-      return NextResponse.json({ 
-        success: false, 
-        error: `Missing: ${missing.join(', ')}`,
-        environment: "Production/Custom Server" 
-      }, { status: 500 });
-    }
-
     const { searchParams } = new URL(request.url);
+    const storeId = searchParams.get('storeId');
     const startParam = searchParams.get('start');
     const endParam = searchParams.get('end');
-    
+
+    if (!storeId) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'storeId is required' 
+      }, { status: 400 });
+    }
+
+    // Fetch store credentials from database
+    const store = await prisma.store.findUnique({
+      where: { id: storeId }
+    });
+
+    if (!store) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Store not found' 
+      }, { status: 404 });
+    }
+
     let startDate = new Date();
     let endDate = new Date();
     
@@ -44,7 +43,7 @@ export async function GET(request) {
     const endGoogle = formatDateGoogle(endDate);
 
     // 1. Fetch Google Ads Data
-    const customer = getGoogleAdsClient();
+    const customer = getGoogleAdsClient(store);
     const googleQuery = `
       SELECT segments.product_item_id, metrics.clicks, metrics.cost_micros 
       FROM shopping_performance_view 
@@ -62,7 +61,7 @@ export async function GET(request) {
     }
 
     // 2. Fetch WooCommerce Data
-    const wooClient = getWooCommerceClient();
+    const wooClient = getWooCommerceClient(store);
     const response = await wooClient.get('orders', {
       after: startDate.toISOString(),
       before: endDate.toISOString(),
