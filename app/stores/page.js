@@ -1,11 +1,12 @@
 'use client';
+export const dynamic = 'force-dynamic';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { TrendingUp, Store, Plus, ArrowLeft } from 'lucide-react';
 
-export default function Stores() {
+function StoresContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [stores, setStores] = useState([]);
@@ -295,5 +296,13 @@ export default function Stores() {
         )}
       </main>
     </div>
+  );
+}
+
+export default function Stores() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-50 flex items-center justify-center">Loading...</div>}>
+      <StoresContent />
+    </Suspense>
   );
 }

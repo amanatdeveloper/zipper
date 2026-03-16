@@ -141,9 +141,14 @@ export async function GET(request) {
       };
     });
 
+    // Filter to show only products with clicks > 0 or salesCount > 0
+    const filteredReport = report.filter(item => 
+      parseInt(item.clicks) > 0 || parseInt(item.salesCount) > 0
+    );
+
     return NextResponse.json({ 
       success: true, 
-      data: report.sort((a, b) => b.clicks - a.clicks) 
+      data: filteredReport.sort((a, b) => b.clicks - a.clicks) 
     });
 
   } catch (error) {

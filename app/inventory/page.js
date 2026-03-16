@@ -1,5 +1,5 @@
 'use client';
-
+export const dynamic = 'force-dynamic';
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -167,5 +167,9 @@ function InventoryContent() {
 }
 
 export default function Inventory() {
-  return <InventoryContent />;
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-50 flex items-center justify-center">Loading...</div>}>
+      <InventoryContent />
+    </Suspense>
+  );
 }
