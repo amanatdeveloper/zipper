@@ -1,6 +1,7 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
+import { Suspense } from 'react';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import { Code, ShieldCheck } from 'lucide-react';
@@ -16,9 +17,13 @@ export default function LayoutWrapper({ children }) {
   return (
     <div className="flex flex-col min-h-screen">
       <div className="flex flex-1">
-        <Sidebar />
+        <Suspense fallback={<div className="w-64 bg-slate-900 border-r border-slate-800 flex items-center justify-center">Loading...</div>}>
+          <Sidebar />
+        </Suspense>
         <div className="flex-1 ml-64">
-          <Header />
+          <Suspense fallback={<div className="h-16 bg-white border-b border-slate-200 flex items-center px-6">Loading...</div>}>
+            <Header />
+          </Suspense>
           <main className="pt-16 min-h-screen bg-slate-50 pb-16">
             {children}
           </main>
