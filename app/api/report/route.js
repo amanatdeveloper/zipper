@@ -44,16 +44,48 @@ export async function GET(request) {
     const startGoogle = formatDateGoogle(startDate);
     const endGoogle = formatDateGoogle(endDate);
 
-    // 1. Fetch Google Ads Data
-    const customer = getGoogleAdsClient(store);
-    const googleQuery = `
-      SELECT segments.product_item_id, metrics.clicks, metrics.cost_micros 
-      FROM shopping_performance_view 
-      WHERE segments.date BETWEEN '${startGoogle}' AND '${endGoogle}'`;
-    
-    const googleResults = await customer.query(googleQuery);
-    const googleMap = {};
+    // Initialize API clients
+    const customer = getGoogleAdsClient({
+      googleClientId: store.googleClientId,
+      googleClientSecret: store.googleClientSecret,
+      googleDeveloperToken: store.googleDeveloperToken,
+      googleCustomerId: store.googleCustomerId,
+      googleLoginCustomerId: store.googleLoginCustomerId,
+      googleRefreshToken: store.googleRefreshToken,
+    });
 
+    const wooClient = getWooCommerceClient({
+      wooUrl: store.wooUrl,
+      wooCk: store.wooCk,
+      wooCs: store.wooCs,
+    });
+
+    // Google Ads query
+    const googleQuery = `
+      SELECT
+        segments.product_item_id,
+        metrics.clicks,
+        metrics.cost_micros
+      FROM shopping_performance_view
+      WHERE segments.date BETWEEN '${startGoogle}' AND '${endGoogle}'
+    `;
+
+    // 1. Fetch Google Ads Data and WooCommerce Data in parallel
+    const [googleResults, wooOrdersResponse, wooProductsResponse] = await Promise.all([
+      customer.query(googleQuery),
+      wooClient.get('orders', {
+        after: startDate.toISOString(),
+        before: endDate.toISOString(),
+        per_page: 100,
+        status: 'processing,completed'
+      }),
+      wooClient.get('products', {
+        per_page: 100 // Adjust as needed, WooCommerce default is 10
+      })
+    ]);
+
+    // Process Google Ads data
+    const googleMap = {};
     for (const row of googleResults) {
       const sku = (row.segments?.product_item_id || '').toLowerCase().trim();
       if (!sku) continue;
@@ -62,17 +94,9 @@ export async function GET(request) {
       googleMap[sku].cost += (parseFloat(row.metrics?.cost_micros || 0) / 1000000);
     }
 
-    // 2. Fetch WooCommerce Data
-    const wooClient = getWooCommerceClient(store);
-    const response = await wooClient.get('orders', {
-      after: startDate.toISOString(),
-      before: endDate.toISOString(),
-      per_page: 100,
-      status: 'processing,completed'
-    });
-
+    // Process WooCommerce Orders data
     const wooMap = {};
-    for (const order of response.data) {
+    for (const order of wooOrdersResponse.data) {
       for (const item of order.line_items || []) {
         const sku = (item.sku || '').toLowerCase().trim();
         if (!sku) continue;
@@ -82,11 +106,24 @@ export async function GET(request) {
       }
     }
 
+    // Process WooCommerce Products data for inventory
+    const inventoryMap = {};
+    for (const product of wooProductsResponse.data) {
+      const sku = (product.sku || '').toLowerCase().trim();
+      if (!sku) continue;
+      inventoryMap[sku] = {
+        stock_status: product.stock_status || 'outofstock',
+        stock_quantity: parseInt(product.stock_quantity || 0),
+        price: parseFloat(product.price || 0)
+      };
+    }
+
     // 3. Final Merge
-    const allSkus = new Set([...Object.keys(googleMap), ...Object.keys(wooMap)]);
+    const allSkus = new Set([...Object.keys(googleMap), ...Object.keys(wooMap), ...Object.keys(inventoryMap)]);
     const report = Array.from(allSkus).map(sku => {
       const g = googleMap[sku] || { clicks: 0, cost: 0 };
       const w = wooMap[sku] || { rev: 0, count: 0 };
+      const inv = inventoryMap[sku] || { stock_status: 'unknown', stock_quantity: 0, price: 0 };
       const acos = w.rev > 0 ? (g.cost / w.rev) * 100 : 0;
       const convRate = g.clicks > 0 ? (w.count / g.clicks) * 100 : 0;
 
@@ -97,7 +134,10 @@ export async function GET(request) {
         revenue: w.rev.toFixed(2),
         salesCount: w.count,
         acos: acos.toFixed(2),
-        convRate: convRate.toFixed(2)
+        convRate: convRate.toFixed(2),
+        stock_status: inv.stock_status,
+        stock_quantity: inv.stock_quantity,
+        price: inv.price.toFixed(2)
       };
     });
 

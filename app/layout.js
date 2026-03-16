@@ -1,5 +1,6 @@
 import './globals.css'
 import { Providers } from '../lib/providers.js'
+import LayoutWrapper from '../components/LayoutWrapper.js'
 
 export const metadata = {
   title: 'Zippper Ads Profit Dashboard',
@@ -11,7 +12,9 @@ export default function RootLayout({ children }) {
     <html lang="en">
       <body>
         <Providers>
-          {children}
+          <LayoutWrapper>
+            {children}
+          </LayoutWrapper>
         </Providers>
       </body>
     </html>

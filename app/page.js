@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { RefreshCw, TrendingUp, Settings, Edit2, Code, ShieldCheck, Store } from 'lucide-react';
+import { RefreshCw, TrendingUp, Settings, Edit2 } from 'lucide-react';
 
 function DashboardContent() {
   const { data: session, status } = useSession();
@@ -71,7 +71,11 @@ function DashboardContent() {
     try {
       const res = await fetch(`/api/report?storeId=${storeId}&start=${startDate}&end=${endDate}`);
       const result = await res.json();
-      if (result.success) setData(result.data);
+      if (result.success) {
+        // Filter to only show products with Google Ads data (clicks > 0)
+        const filteredData = result.data.filter(item => parseInt(item.clicks) > 0);
+        setData(filteredData);
+      }
     } catch (e) { 
       console.error(e); 
     } finally { 
@@ -92,7 +96,16 @@ function DashboardContent() {
     const targetACOS = parseFloat(getTarget(row.sku, 'acos'));
     const targetConv = parseFloat(getTarget(row.sku, 'conv'));
     const targetSales = parseFloat(getTarget(row.sku, 'sales'));
-    
+
+    // Check stock status first
+    if (row.stock_status === 'outofstock') {
+      return '❌ Out of Stock: Stop Ads immediately.';
+    }
+
+    if (parseFloat(row.acos) > targetACOS && parseInt(row.stock_quantity) <= 10) {
+      return '⚠️ High ACOS & Low Stock: Reduce bids to preserve remaining inventory.';
+    }
+
     if (parseInt(row.clicks) >= 100 && parseFloat(row.convRate) < targetConv) return '💰 Reduce Price (Low Conv)';
     if (parseFloat(row.acos) > targetACOS && parseFloat(row.convRate) < targetConv) return '📉 Reduce Bid (High ACOS)';
     if (parseFloat(row.acos) <= targetACOS && parseInt(row.salesCount) >= targetSales) return '✅ Optimal Performance';
@@ -108,28 +121,11 @@ function DashboardContent() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-900 pb-24 text-[13px]">
-      {/* Header */}
-      <header className="bg-white border-b sticky top-0 z-30 p-3 shadow-sm">
-        <div className="max-w-[1600px] mx-auto flex flex-wrap justify-between items-center gap-4">
-          <div className="flex items-center gap-2">
-            <TrendingUp className="text-blue-600 w-7 h-7" />
-            <h1 className="text-lg font-black tracking-tight uppercase">Zipper <span className="text-blue-600">Ads Engine</span></h1>
-          </div>
-          <div className="flex items-center gap-3">
-            <a
-              href="/stores"
-              className="text-slate-600 hover:text-slate-900 px-3 py-2 rounded-lg border border-slate-200 hover:border-slate-300 transition-colors"
-            >
-              ← Back to Stores
-            </a>
-            {/* Current Store Display */}
-            <div className="flex items-center gap-2 bg-slate-100 px-3 py-2 rounded-lg border border-slate-200">
-              <Store className="text-slate-600" size={16} />
-              <span className="text-sm font-bold text-slate-900">
-                {store ? store.name : 'Loading...'}
-              </span>
-            </div>
+    <div className="font-sans text-slate-900 pb-24 text-[13px]">
+      <main className="max-w-[1600px] mx-auto p-4 md:p-6 space-y-6">
+        {/* Date Controls */}
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-lg flex items-center justify-between">
+          <div className="flex items-center gap-4">
             <div className="flex bg-slate-100 rounded-lg p-1 border border-slate-200">
               <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="bg-transparent text-[11px] p-1 outline-none border-none font-bold" />
               <span className="text-slate-400 self-center px-1">-</span>
@@ -141,9 +137,6 @@ function DashboardContent() {
             </button>
           </div>
         </div>
-      </header>
-
-      <main className="max-w-[1600px] mx-auto p-4 md:p-6 space-y-6">
         {/* Global Editable Targets */}
         <section className="bg-white p-6 rounded-2xl border border-slate-200 shadow-lg relative overflow-hidden">
           <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-600"></div>
@@ -187,6 +180,7 @@ function DashboardContent() {
                   <th className="p-4 text-center">Revenue</th>
                   <th className="p-4 text-center">ACOS %</th>
                   <th className="p-4 text-center">Conv %</th>
+                  <th className="p-4 text-center">Stock</th>
                   <th className="p-4">AI Strategy & Recommendation</th>
                 </tr>
               </thead>
@@ -229,6 +223,26 @@ function DashboardContent() {
                       </div>
                     </td>
                     <td className="p-4 text-center font-black text-slate-700">{row.convRate}%</td>
+                    <td className="p-4 text-center">
+                      {row.stock_quantity !== undefined ? (
+                        <div className={`inline-block px-3 py-2 rounded-full font-black text-[10px] ${
+                          row.stock_status === 'outofstock' || row.stock_quantity === 0
+                            ? 'bg-red-100 text-red-700 border-2 border-red-400'
+                            : row.stock_quantity <= 10
+                            ? 'bg-yellow-100 text-yellow-700 border-2 border-yellow-400 ring-2 ring-yellow-300'
+                            : 'bg-green-100 text-green-700'
+                        }`}>
+                          {row.stock_status === 'outofstock' || row.stock_quantity === 0
+                            ? '❌ Out of Stock'
+                            : row.stock_quantity <= 10
+                            ? `⚠️ Low Stock (${row.stock_quantity})`
+                            : `✅ In Stock (${row.stock_quantity})`
+                          }
+                        </div>
+                      ) : (
+                        <span className="text-slate-500 font-medium">📦 Unknown</span>
+                      )}
+                    </td>
                     <td className="p-4">
                       <div className="p-3 rounded-xl border border-slate-100 bg-white shadow-sm">
                         <div className="font-black text-slate-800 text-xs mb-1">{getDynamicRec(row)}</div>
@@ -244,17 +258,6 @@ function DashboardContent() {
           </div>
         </div>
       </main>
-      
-      <footer className="fixed bottom-0 w-full bg-slate-900 border-t border-slate-800 p-4 flex justify-between px-8 text-[9px] font-black uppercase tracking-[0.2em] z-40">
-        <div className="flex items-center gap-6">
-            <span className="flex items-center gap-1.5 text-emerald-500"><ShieldCheck size={12}/> System Live</span>
-            <span className="text-slate-500 border-l border-slate-800 pl-6">Zipper Dashboard &copy; 2026</span>
-        </div>
-        <div className="flex items-center gap-2">
-            <Code size={12} className="text-blue-500"/>
-            <span className="text-slate-500">Built by <span className="text-white">Amanat Developers</span></span>
-        </div>
-      </footer>
     </div>
   );
 }

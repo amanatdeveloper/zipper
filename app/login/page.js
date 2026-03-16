@@ -23,10 +23,12 @@ export default function Login() {
       redirect: false,
     });
 
-    if (result?.error) {
-      setError('Invalid credentials');
-    } else {
+    console.log('Sign in result:', result);
+
+    if (result?.ok) {
       router.push('/stores');
+    } else {
+      setError('Invalid credentials');
     }
 
     setLoading(false);
