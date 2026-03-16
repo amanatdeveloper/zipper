@@ -1,5 +1,4 @@
 'use client';
-export const revalidate = 0;
 
 import { useState } from 'react';
 import { signIn, getSession } from 'next-auth/react';
