@@ -34,10 +34,34 @@ export async function GET(request) {
       wooCk: store.wooCk,
       wooCs: store.wooCs,
     });
-    const response = await wooClient.get('products', {
-      per_page: 100, // Adjust as needed
-      status: 'publish' // Only published products
-    });
+    
+    // Helper function to fetch all WooCommerce products with pagination
+    async function fetchAllWooCommerceProducts(client) {
+      const allProducts = [];
+      let page = 1;
+      const perPage = 100;
+      
+      while (true) {
+        const response = await client.get('products', {
+          per_page: perPage,
+          page: page,
+          status: 'publish'
+        });
+        
+        allProducts.push(...response.data);
+        
+        // Check if we got less than perPage results (last page)
+        if (response.data.length < perPage) {
+          break;
+        }
+        
+        page++;
+      }
+      
+      return { data: allProducts };
+    }
+    
+    const response = await fetchAllWooCommerceProducts(wooClient);
 
     return NextResponse.json({
       success: true,

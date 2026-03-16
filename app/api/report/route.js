@@ -4,6 +4,12 @@ import { prisma } from '../../../lib/prisma.js';
 
 export const dynamic = 'force-dynamic';
 
+// Helper function to normalize SKUs: case-insensitive, trimmed, remove extra spaces
+function normalizeSku(sku) {
+  if (!sku || typeof sku !== 'string') return '';
+  return sku.toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -44,6 +50,32 @@ export async function GET(request) {
     const startGoogle = formatDateGoogle(startDate);
     const endGoogle = formatDateGoogle(endDate);
 
+    // Helper function to fetch all WooCommerce products with pagination
+    async function fetchAllWooCommerceProducts(client) {
+      const allProducts = [];
+      let page = 1;
+      const perPage = 100;
+      
+      while (true) {
+        const response = await client.get('products', {
+          per_page: perPage,
+          page: page,
+          status: 'publish'
+        });
+        
+        allProducts.push(...response.data);
+        
+        // Check if we got less than perPage results (last page)
+        if (response.data.length < perPage) {
+          break;
+        }
+        
+        page++;
+      }
+      
+      return { data: allProducts };
+    }
+
     // Initialize API clients
     const customer = getGoogleAdsClient({
       googleClientId: store.googleClientId,
@@ -79,15 +111,13 @@ export async function GET(request) {
         per_page: 100,
         status: 'processing,completed'
       }),
-      wooClient.get('products', {
-        per_page: 100 // Adjust as needed, WooCommerce default is 10
-      })
+      fetchAllWooCommerceProducts(wooClient)
     ]);
 
     // Process Google Ads data
     const googleMap = {};
     for (const row of googleResults) {
-      const sku = (row.segments?.product_item_id || '').toLowerCase().trim();
+      const sku = normalizeSku(row.segments?.product_item_id || '');
       if (!sku) continue;
       if (!googleMap[sku]) googleMap[sku] = { clicks: 0, cost: 0 };
       googleMap[sku].clicks += parseInt(row.metrics?.clicks || 0);
@@ -98,7 +128,7 @@ export async function GET(request) {
     const wooMap = {};
     for (const order of wooOrdersResponse.data) {
       for (const item of order.line_items || []) {
-        const sku = (item.sku || '').toLowerCase().trim();
+        const sku = normalizeSku(item.sku || '');
         if (!sku) continue;
         if (!wooMap[sku]) wooMap[sku] = { rev: 0, count: 0 };
         wooMap[sku].rev += parseFloat(item.total || 0);
@@ -109,7 +139,7 @@ export async function GET(request) {
     // Process WooCommerce Products data for inventory
     const inventoryMap = {};
     for (const product of wooProductsResponse.data) {
-      const sku = (product.sku || '').toLowerCase().trim();
+      const sku = normalizeSku(product.sku || '');
       if (!sku) continue;
       inventoryMap[sku] = {
         stock_status: product.stock_status || 'outofstock',
