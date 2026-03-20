@@ -1,22 +1,27 @@
 'use client';
-import { useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { BarChart3, Package, Brain, Settings, LogOut, User } from 'lucide-react';
 
-const Sidebar = () => {
+const Sidebar = ({ userRole }) => {
   const { data: session } = useSession();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const storeId = searchParams.get('storeId');
+  const isStoreUser = userRole === 'STORE_USER';
 
-  const menuItems = [
+  const baseItems = [
     { name: 'Dashboard', href: `/?storeId=${storeId}`, icon: BarChart3 },
-    { name: 'Inventory Manager', href: `/inventory?storeId=${storeId}`, icon: Package },
-    { name: 'AI Auditor', href: '#', icon: Brain, disabled: true },
-    { name: 'Settings', href: '/stores', icon: Settings },
+    { name: 'Inventory', href: `/inventory?storeId=${storeId}`, icon: Package },
+    { name: 'Optimization Logs', href: `/optimization-logs?storeId=${storeId}`, icon: Brain },
   ];
+
+  const adminItems = [
+    { name: 'Admin', href: '/admin', icon: Settings },
+  ];
+
+  const menuItems = isStoreUser ? baseItems : [...baseItems, ...adminItems];
 
   const handleLogout = async () => {
     await signOut({ redirect: false });
@@ -27,7 +32,7 @@ const Sidebar = () => {
     <div className="w-64 bg-slate-900 text-white h-screen fixed left-0 top-0 z-50 flex flex-col">
       <div className="p-6 border-b border-slate-800">
         <h1 className="text-xl font-bold">Zipper Ads Engine</h1>
-        <p className="text-sm text-slate-400">Phase 2</p>
+        {/*<p className="text-sm text-slate-400">Phase 2</p>*/}
       </div>
 
       <nav className="flex-1 p-4">
@@ -57,7 +62,7 @@ const Sidebar = () => {
           </div>
           <div>
             <p className="text-sm font-medium">{session?.user?.email}</p>
-            <p className="text-xs text-slate-400">Logged in</p>
+            <p className="text-xs text-slate-400">{session?.user?.role || 'Logged in'}</p>
           </div>
         </div>
         <button

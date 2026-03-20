@@ -1,22 +1,22 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '../auth/[...nextauth]/route.js';
 import { prisma } from '../../../lib/prisma.js';
+import { getAuthenticatedUser, isSuperAdmin } from '../../../lib/auth-helpers.js';
 
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
+    const { user } = await getAuthenticatedUser();
 
-    if (!session?.user?.id) {
+    if (!user?.id) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
     const stores = await prisma.store.findMany({
-      where: { userId: session.user.id },
+      where: isSuperAdmin(user) ? {} : { userId: user.id },
       select: {
         id: true,
         name: true,
         createdAt: true,
+        userId: true,
       }
     });
 
@@ -29,22 +29,37 @@ export async function GET() {
 
 export async function POST(request) {
   try {
-    const session = await getServerSession(authOptions);
+    const { user } = await getAuthenticatedUser();
 
-    if (!session?.user?.id) {
+    if (!user?.id) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    if (!isSuperAdmin(user)) {
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    }
+
     const body = await request.json();
-    const { name, googleClientId, googleClientSecret, googleDeveloperToken, googleRefreshToken, googleCustomerId, googleLoginCustomerId, wooUrl, wooCk, wooCs } = body;
+    const { name, googleClientId, googleClientSecret, googleDeveloperToken, googleRefreshToken, googleCustomerId, googleLoginCustomerId, wooUrl, wooCk, wooCs, userId } = body;
 
     if (!name || !googleClientId || !googleClientSecret || !googleDeveloperToken || !googleRefreshToken || !googleCustomerId || !googleLoginCustomerId || !wooUrl || !wooCk || !wooCs) {
       return NextResponse.json({ success: false, error: 'All fields are required' }, { status: 400 });
     }
 
+    if (userId) {
+      const assignedUser = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, role: true },
+      });
+
+      if (!assignedUser) {
+        return NextResponse.json({ success: false, error: 'Assigned user not found' }, { status: 404 });
+      }
+    }
+
     const store = await prisma.store.create({
       data: {
-        userId: session.user.id,
+        userId: userId || null,
         name,
         googleClientId,
         googleClientSecret,

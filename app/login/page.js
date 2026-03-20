@@ -26,7 +26,8 @@ export default function Login() {
     console.log('Sign in result:', result);
 
     if (result?.ok) {
-      router.push('/stores');
+      const session = await getSession();
+      router.push(session?.user?.role === 'SUPER_ADMIN' ? '/admin' : '/');
     } else {
       setError('Invalid credentials');
     }

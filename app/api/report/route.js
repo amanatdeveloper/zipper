@@ -1,8 +1,10 @@
 ﻿import { NextResponse } from 'next/server';
 import { getGoogleAdsClient, getWooCommerceClient } from '../../../lib/api-clients.js';
 import { prisma } from '../../../lib/prisma.js';
+import { getAuthenticatedUser, getAccessibleStore } from '../../../lib/auth-helpers.js';
 
 export const dynamic = 'force-dynamic';
+const LEARNING_PERIOD_DAYS = 14;
 
 // Helper function to normalize SKUs: case-insensitive, trimmed, remove extra spaces
 function normalizeSku(sku) {
@@ -10,8 +12,38 @@ function normalizeSku(sku) {
   return sku.toLowerCase().trim().replace(/\s+/g, ' ');
 }
 
+async function fetchOptimizationLogs(storeId, learningPeriodStart) {
+  if (!prisma.optimizationLog?.findMany) {
+    console.warn('OptimizationLog Prisma client is not generated yet. Returning empty learning-phase data.');
+    return [];
+  }
+
+  try {
+    return await prisma.optimizationLog.findMany({
+      where: {
+        storeId,
+        appliedAt: {
+          gte: learningPeriodStart,
+        },
+      },
+      orderBy: {
+        appliedAt: 'desc',
+      },
+    });
+  } catch (error) {
+    console.warn('OptimizationLog lookup failed. Returning empty learning-phase data.', error.message);
+    return [];
+  }
+}
+
 export async function GET(request) {
   try {
+    const { user } = await getAuthenticatedUser();
+
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const storeId = searchParams.get('storeId');
     const startParam = searchParams.get('start');
@@ -24,17 +56,17 @@ export async function GET(request) {
       }, { status: 400 });
     }
 
-    // Fetch store credentials from database
-    const store = await prisma.store.findUnique({
-      where: { id: storeId }
-    });
+    const store = await getAccessibleStore(user, storeId);
 
     if (!store) {
       return NextResponse.json({ 
         success: false, 
-        error: 'Store not found' 
+        error: 'Store not found or access denied'
       }, { status: 404 });
     }
+
+    const learningPeriodStart = new Date();
+    learningPeriodStart.setDate(learningPeriodStart.getDate() - LEARNING_PERIOD_DAYS);
 
     let startDate = new Date();
     let endDate = new Date();
@@ -103,7 +135,7 @@ export async function GET(request) {
     `;
 
     // 1. Fetch Google Ads Data and WooCommerce Data in parallel
-    const [googleResults, wooOrdersResponse, wooProductsResponse] = await Promise.all([
+    const [googleResults, wooOrdersResponse, wooProductsResponse, optimizationLogs] = await Promise.all([
       customer.query(googleQuery),
       wooClient.get('orders', {
         after: startDate.toISOString(),
@@ -111,7 +143,8 @@ export async function GET(request) {
         per_page: 100,
         status: 'processing,completed'
       }),
-      fetchAllWooCommerceProducts(wooClient)
+      fetchAllWooCommerceProducts(wooClient),
+      fetchOptimizationLogs(storeId, learningPeriodStart),
     ]);
 
     // Process Google Ads data
@@ -148,12 +181,20 @@ export async function GET(request) {
       };
     }
 
+    const optimizationMap = {};
+    for (const log of optimizationLogs) {
+      const sku = normalizeSku(log.sku);
+      if (!sku || optimizationMap[sku]) continue;
+      optimizationMap[sku] = log;
+    }
+
     // 3. Final Merge
     const allSkus = new Set([...Object.keys(googleMap), ...Object.keys(wooMap), ...Object.keys(inventoryMap)]);
     const report = Array.from(allSkus).map(sku => {
       const g = googleMap[sku] || { clicks: 0, cost: 0 };
       const w = wooMap[sku] || { rev: 0, count: 0 };
       const inv = inventoryMap[sku] || { stock_status: 'unknown', stock_quantity: 0, price: 0 };
+      const optimizationLog = optimizationMap[sku] || null;
       const acos = w.rev > 0 ? (g.cost / w.rev) * 100 : 0;
       const convRate = g.clicks > 0 ? (w.count / g.clicks) * 100 : 0;
 
@@ -167,7 +208,10 @@ export async function GET(request) {
         convRate: convRate.toFixed(2),
         stock_status: inv.stock_status,
         stock_quantity: inv.stock_quantity,
-        price: inv.price.toFixed(2)
+        price: inv.price.toFixed(2),
+        learningPhase: Boolean(optimizationLog),
+        optimizedAt: optimizationLog?.appliedAt || null,
+        actionTaken: optimizationLog?.actionTaken || null
       };
     });
 

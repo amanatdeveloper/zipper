@@ -1,11 +1,17 @@
 import { NextResponse } from 'next/server';
 import { getWooCommerceClient } from '../../../lib/api-clients.js';
-import { prisma } from '../../../lib/prisma.js';
+import { getAuthenticatedUser, getAccessibleStore } from '../../../lib/auth-helpers.js';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request) {
   try {
+    const { user } = await getAuthenticatedUser();
+
+    if (!user) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const storeId = searchParams.get('storeId');
 
@@ -16,15 +22,12 @@ export async function GET(request) {
       }, { status: 400 });
     }
 
-    // Fetch store credentials from database
-    const store = await prisma.store.findUnique({
-      where: { id: storeId }
-    });
+    const store = await getAccessibleStore(user, storeId);
 
     if (!store) {
       return NextResponse.json({
         success: false,
-        error: 'Store not found'
+        error: 'Store not found or access denied'
       }, { status: 404 });
     }
 

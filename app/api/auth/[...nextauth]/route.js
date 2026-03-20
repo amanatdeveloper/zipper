@@ -49,6 +49,7 @@ export const authOptions = {
           return {
             id: user.id,
             email: user.email,
+            role: user.role,
           };
         } catch (error) {
           console.error('❌ Auth error:', error.message, error.stack);
@@ -66,6 +67,7 @@ export const authOptions = {
       if (user) {
         token.id = user.id;
         token.email = user.email;
+        token.role = user.role;
       }
       return token;
     },
@@ -73,6 +75,7 @@ export const authOptions = {
       if (token) {
         session.user.id = token.id;
         session.user.email = token.email;
+        session.user.role = token.role;
       }
       return session;
     }

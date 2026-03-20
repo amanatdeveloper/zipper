@@ -11,10 +11,16 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+enum UserRole {
+  SUPER_ADMIN
+  STORE_USER
+}
+
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
   password  String
+  role      UserRole @default(STORE_USER)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -23,7 +29,7 @@ model User {
 
 model Store {
   id                      String @id @default(cuid())
-  userId                  String
+  userId                  String?
   name                    String
 
   // Google Ads credentials
@@ -42,5 +48,21 @@ model Store {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user             User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  optimizationLogs OptimizationLog[]
+
+  @@index([userId])
+}
+
+model OptimizationLog {
+  id          String   @id @default(uuid())
+  sku         String
+  storeId     String
+  actionTaken String
+  appliedAt   DateTime @default(now())
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, appliedAt])
+  @@index([storeId, sku, appliedAt])
 }

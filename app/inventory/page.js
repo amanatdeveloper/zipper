@@ -22,7 +22,8 @@ function InventoryContent() {
 
     const storeId = searchParams.get('storeId');
     if (!storeId) {
-      router.push('/stores');
+      setStore(null);
+      setProducts([]);
       return;
     }
 
@@ -37,11 +38,11 @@ function InventoryContent() {
       if (result.success) {
         setStore(result.data);
       } else {
-        router.push('/stores');
+        router.push('/');
       }
     } catch (e) {
       console.error(e);
-      router.push('/stores');
+      router.push('/');
     }
   };
 
@@ -76,6 +77,19 @@ function InventoryContent() {
 
   if (!session) {
     return null;
+  }
+
+  if (!searchParams.get('storeId')) {
+    return (
+      <div className="font-sans text-slate-900 text-[13px]">
+        <main className="max-w-[1600px] mx-auto p-4 md:p-6">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-lg p-8">
+            <h1 className="text-xl font-black text-slate-900">Select a Store</h1>
+            <p className="text-slate-600 mt-2">Choose a store from the dropdown in the top navigation to view inventory.</p>
+          </div>
+        </main>
+      </div>
+    );
   }
 
   return (
