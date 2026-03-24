@@ -31,6 +31,7 @@ model Store {
   id                      String @id @default(cuid())
   userId                  String?
   name                    String
+  auditPrompt             String @default("Analyze this page for conversion optimization")
 
   // Google Ads credentials
   googleClientId          String
@@ -50,6 +51,7 @@ model Store {
 
   user             User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
   optimizationLogs OptimizationLog[]
+  pageAudits       PageAudit[]
 
   @@index([userId])
 }
@@ -65,4 +67,20 @@ model OptimizationLog {
 
   @@index([storeId, appliedAt])
   @@index([storeId, sku, appliedAt])
+}
+
+model PageAudit {
+  id        String   @id @default(cuid())
+  sku       String
+  storeId   String
+  url       String
+  score     Int
+  checklist Json
+  summary   String   @db.Text
+  createdAt DateTime @default(now())
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, sku, createdAt])
+  @@index([storeId, url, createdAt])
 }

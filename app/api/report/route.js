@@ -177,7 +177,9 @@ export async function GET(request) {
       inventoryMap[sku] = {
         stock_status: product.stock_status || 'outofstock',
         stock_quantity: parseInt(product.stock_quantity || 0),
-        price: parseFloat(product.price || 0)
+        price: parseFloat(product.price || 0),
+        productUrl: product.permalink || '',
+        productName: product.name || '',
       };
     }
 
@@ -193,7 +195,13 @@ export async function GET(request) {
     const report = Array.from(allSkus).map(sku => {
       const g = googleMap[sku] || { clicks: 0, cost: 0 };
       const w = wooMap[sku] || { rev: 0, count: 0 };
-      const inv = inventoryMap[sku] || { stock_status: 'unknown', stock_quantity: 0, price: 0 };
+      const inv = inventoryMap[sku] || {
+        stock_status: 'unknown',
+        stock_quantity: 0,
+        price: 0,
+        productUrl: '',
+        productName: '',
+      };
       const optimizationLog = optimizationMap[sku] || null;
       const acos = w.rev > 0 ? (g.cost / w.rev) * 100 : 0;
       const convRate = g.clicks > 0 ? (w.count / g.clicks) * 100 : 0;
@@ -209,6 +217,8 @@ export async function GET(request) {
         stock_status: inv.stock_status,
         stock_quantity: inv.stock_quantity,
         price: inv.price.toFixed(2),
+        productUrl: inv.productUrl,
+        productName: inv.productName,
         learningPhase: Boolean(optimizationLog),
         optimizedAt: optimizationLog?.appliedAt || null,
         actionTaken: optimizationLog?.actionTaken || null

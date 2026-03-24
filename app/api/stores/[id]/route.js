@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '../../../../lib/prisma.js';
-import { getAuthenticatedUser, isSuperAdmin } from '../../../../lib/auth-helpers.js';
+import {
+  getAuthenticatedUser,
+  isSuperAdmin,
+  runStoreOperationWithAuditPrompt,
+} from '../../../../lib/auth-helpers.js';
+import { normalizeAuditPrompt } from '../../../../lib/page-audit.js';
 
 export async function GET(request, { params }) {
   try {
@@ -12,27 +17,15 @@ export async function GET(request, { params }) {
 
     const { id } = params;
 
-    const store = await prisma.store.findFirst({
-      where: {
-        id: id,
-        ...(isSuperAdmin(user) ? {} : { userId: user.id }),
-      },
-      select: {
-        id: true,
-        name: true,
-        createdAt: true,
-        userId: true,
-        googleClientId: true,
-        googleClientSecret: true,
-        googleDeveloperToken: true,
-        googleRefreshToken: true,
-        googleCustomerId: true,
-        googleLoginCustomerId: true,
-        wooUrl: true,
-        wooCk: true,
-        wooCs: true,
-      }
-    });
+    const store = await runStoreOperationWithAuditPrompt((select) =>
+      prisma.store.findFirst({
+        where: {
+          id: id,
+          ...(isSuperAdmin(user) ? {} : { userId: user.id }),
+        },
+        select,
+      })
+    );
 
     if (!store) {
       return NextResponse.json({ success: false, error: 'Store not found' }, { status: 404 });
@@ -57,6 +50,7 @@ export async function PUT(request, { params }) {
     const body = await request.json();
     const {
       name,
+      auditPrompt,
       googleClientId,
       googleClientSecret,
       googleDeveloperToken,
@@ -84,37 +78,26 @@ export async function PUT(request, { params }) {
       }
     }
 
-    const store = await prisma.store.update({
-      where: { id },
-      data: {
-        name,
-        googleClientId,
-        googleClientSecret,
-        googleDeveloperToken,
-        googleRefreshToken,
-        googleCustomerId,
-        googleLoginCustomerId,
-        wooUrl,
-        wooCk,
-        wooCs,
-        userId: userId || null,
-      },
-      select: {
-        id: true,
-        name: true,
-        createdAt: true,
-        userId: true,
-        googleClientId: true,
-        googleClientSecret: true,
-        googleDeveloperToken: true,
-        googleRefreshToken: true,
-        googleCustomerId: true,
-        googleLoginCustomerId: true,
-        wooUrl: true,
-        wooCk: true,
-        wooCs: true,
-      },
-    });
+    const store = await runStoreOperationWithAuditPrompt((select, supportsAuditPrompt) =>
+      prisma.store.update({
+        where: { id },
+        data: {
+          name,
+          ...(supportsAuditPrompt ? { auditPrompt: normalizeAuditPrompt(auditPrompt) } : {}),
+          googleClientId,
+          googleClientSecret,
+          googleDeveloperToken,
+          googleRefreshToken,
+          googleCustomerId,
+          googleLoginCustomerId,
+          wooUrl,
+          wooCk,
+          wooCs,
+          userId: userId || null,
+        },
+        select,
+      })
+    );
 
     return NextResponse.json({ success: true, data: store });
   } catch (error) {

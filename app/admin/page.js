@@ -5,10 +5,12 @@ import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Pencil, Shield, Store, UserPlus } from 'lucide-react';
+import { DEFAULT_AUDIT_PROMPT } from '../../lib/page-audit.js';
 
 const initialStoreForm = {
   name: '',
   userId: '',
+  auditPrompt: DEFAULT_AUDIT_PROMPT,
   googleClientId: '',
   googleClientSecret: '',
   googleDeveloperToken: '',
@@ -149,6 +151,7 @@ export default function AdminPage() {
       setEditingStoreForm({
         name: result.data.name || '',
         userId: result.data.userId || '',
+        auditPrompt: result.data.auditPrompt || DEFAULT_AUDIT_PROMPT,
         googleClientId: result.data.googleClientId || '',
         googleClientSecret: result.data.googleClientSecret || '',
         googleDeveloperToken: result.data.googleDeveloperToken || '',
@@ -253,6 +256,19 @@ export default function AdminPage() {
       <div className="md:col-span-2">
         <label className="block text-sm font-medium text-slate-700 mb-2">Store Name</label>
         <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" required />
+      </div>
+      <div className="md:col-span-2">
+        <label className="block text-sm font-medium text-slate-700 mb-2">AI Audit Prompt</label>
+        <textarea
+          value={form.auditPrompt}
+          onChange={(e) => setForm({ ...form, auditPrompt: e.target.value })}
+          rows={4}
+          className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+          placeholder={DEFAULT_AUDIT_PROMPT}
+        />
+        <p className="mt-2 text-xs text-slate-500">
+          Super admins can tailor the CRO instructions used when the AI audits live product pages.
+        </p>
       </div>
       <div className="md:col-span-2">
         <label className="block text-sm font-medium text-slate-700 mb-2">Assign to User ID</label>

@@ -3,7 +3,8 @@ export const dynamic = 'force-dynamic';
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { RefreshCw, Settings, Edit2, Sparkles } from 'lucide-react';
+import { RefreshCw, Settings, Edit2, Sparkles, Search } from 'lucide-react';
+import PageAuditModal from '../components/PageAuditModal.js';
 
 const LEARNING_PERIOD_DAYS = 14;
 
@@ -15,6 +16,8 @@ function DashboardContent() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [optimizingSkus, setOptimizingSkus] = useState({});
+  const [auditModalOpen, setAuditModalOpen] = useState(false);
+  const [activeAuditProduct, setActiveAuditProduct] = useState(null);
   const [startDate, setStartDate] = useState(
     new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   );
@@ -181,6 +184,17 @@ function DashboardContent() {
     }
   };
 
+  const handleOpenAudit = (product) => {
+    if (!product?.productUrl) return;
+    setActiveAuditProduct(product);
+    setAuditModalOpen(true);
+  };
+
+  const handleCloseAudit = () => {
+    setAuditModalOpen(false);
+    setActiveAuditProduct(null);
+  };
+
   if (status === 'loading') {
     return <div className="min-h-screen bg-slate-50 flex items-center justify-center">Loading...</div>;
   }
@@ -291,6 +305,9 @@ function DashboardContent() {
                       <div className="mb-2 flex items-start justify-between gap-3">
                         <div>
                           <div className="font-black text-slate-900 text-base tracking-tight">{row.sku}</div>
+                          {row.productName ? (
+                            <div className="mt-1 text-xs font-medium text-slate-500">{row.productName}</div>
+                          ) : null}
                           {row.learningPhase ? (
                             <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-amber-800">
                               <Sparkles size={12} />
@@ -301,15 +318,27 @@ function DashboardContent() {
                             </div>
                           ) : null}
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleMarkOptimized(row.sku)}
-                          disabled={Boolean(optimizingSkus[row.sku])}
-                          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          <Sparkles size={12} className={optimizingSkus[row.sku] ? 'animate-pulse' : ''} />
-                          {optimizingSkus[row.sku] ? 'Saving...' : 'Mark Optimized'}
-                        </button>
+                        <div className="flex flex-col gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleMarkOptimized(row.sku)}
+                            disabled={Boolean(optimizingSkus[row.sku])}
+                            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            <Sparkles size={12} className={optimizingSkus[row.sku] ? 'animate-pulse' : ''} />
+                            {optimizingSkus[row.sku] ? 'Saving...' : 'Mark Optimized'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenAudit(row)}
+                            disabled={!row.productUrl}
+                            className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-blue-700 transition-colors hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400"
+                            title={row.productUrl ? 'Audit product page' : 'No product URL available for this SKU'}
+                          >
+                            <Search size={12} />
+                            {row.productUrl ? 'Audit' : 'No URL'}
+                          </button>
+                        </div>
                       </div>
                       <div className="flex gap-3">
                         <div className="flex-1">
@@ -410,6 +439,12 @@ function DashboardContent() {
             </table>
           </div>
         </div>
+        <PageAuditModal
+          isOpen={auditModalOpen}
+          product={activeAuditProduct}
+          storeId={searchParams.get('storeId')}
+          onClose={handleCloseAudit}
+        />
       </main>
     </div>
   );
