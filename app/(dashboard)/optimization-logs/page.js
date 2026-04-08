@@ -2,14 +2,12 @@
 export const dynamic = 'force-dynamic';
 
 import { Suspense, useEffect, useState } from 'react';
-import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { History, RefreshCw, Trash2 } from 'lucide-react';
 
 const LEARNING_PHASE_DAYS = 14;
 
 function OptimizationLogsContent() {
-  const { data: session, status } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
   const storeId = searchParams.get('storeId');
@@ -19,13 +17,6 @@ function OptimizationLogsContent() {
   const [removingIds, setRemovingIds] = useState({});
 
   useEffect(() => {
-    if (status === 'loading') return;
-
-    if (!session) {
-      router.push('/login');
-      return;
-    }
-
     if (!storeId) {
       setLogs([]);
       setError('');
@@ -33,7 +24,7 @@ function OptimizationLogsContent() {
     }
 
     fetchLogs(storeId);
-  }, [session, status, router, storeId]);
+  }, [router, storeId]);
 
   const fetchLogs = async (activeStoreId) => {
     setLoading(true);
@@ -108,14 +99,6 @@ function OptimizationLogsContent() {
       setRemovingIds((current) => ({ ...current, [id]: false }));
     }
   };
-
-  if (status === 'loading') {
-    return <div className="min-h-screen bg-slate-50 flex items-center justify-center">Loading...</div>;
-  }
-
-  if (!session) {
-    return null;
-  }
 
   if (!storeId) {
     return (

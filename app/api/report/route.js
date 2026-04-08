@@ -1,15 +1,151 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getGoogleAdsClient, getWooCommerceClient } from '../../../lib/api-clients.js';
 import { prisma } from '../../../lib/prisma.js';
-import { getAuthenticatedUser, getAccessibleStore } from '../../../lib/auth-helpers.js';
+import { getAccessibleStore, getAuthenticatedUser } from '../../../lib/auth-helpers.js';
+import { isMissingProductMetaStorage, normalizeSku } from '../../../lib/product-meta.js';
 
 export const dynamic = 'force-dynamic';
-const LEARNING_PERIOD_DAYS = 14;
 
-// Helper function to normalize SKUs: case-insensitive, trimmed, remove extra spaces
-function normalizeSku(sku) {
-  if (!sku || typeof sku !== 'string') return '';
-  return sku.toLowerCase().trim().replace(/\s+/g, ' ');
+const LEARNING_PERIOD_DAYS = 14;
+const DEFAULT_REPORT_WINDOW_DAYS = 30;
+const TRAILING_SALES_WINDOW_DAYS = 30;
+const WOO_ORDER_FETCH_BUFFER_DAYS = 1;
+const RELEVANT_WOO_ORDER_STATUSES = ['processing', 'completed', 'on-hold'];
+
+const AUDIT_ACTION_LABELS = {
+  'Customer reviews or testimonials': 'Add Reviews',
+  'Product video or demo': 'Add Video',
+  'Trust badges or secure payment cues': 'Add Trust Badges',
+  'Warranty or guarantee messaging': 'Add Warranty',
+  'Shipping clarity': 'Clarify Shipping',
+  'Returns or risk-reversal policy': 'Clarify Returns',
+  'FAQ or objection handling': 'Add FAQ',
+  'Comparison, size, or spec chart': 'Add Comparison',
+};
+
+function parseDateParam(value, endOfDay = false) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value || '')) {
+    return null;
+  }
+
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(
+    Date.UTC(
+      year,
+      month - 1,
+      day,
+      endOfDay ? 23 : 0,
+      endOfDay ? 59 : 0,
+      endOfDay ? 59 : 0,
+      endOfDay ? 999 : 0
+    )
+  );
+
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return date;
+}
+
+function formatDateParam(date) {
+  return date.toISOString().split('T')[0];
+}
+
+function shiftDateParam(value, days) {
+  const date = parseDateParam(value, false);
+
+  if (!date) {
+    return null;
+  }
+
+  date.setUTCDate(date.getUTCDate() + days);
+  return formatDateParam(date);
+}
+
+function getDefaultDateRange() {
+  const today = new Date();
+  const endDateParam = formatDateParam(today);
+  const startDate = parseDateParam(endDateParam, false);
+  startDate.setUTCDate(startDate.getUTCDate() - (DEFAULT_REPORT_WINDOW_DAYS - 1));
+
+  return {
+    startDateParam: formatDateParam(startDate),
+    endDateParam,
+  };
+}
+
+function formatDateGoogle(value) {
+  return value.replace(/-/g, '');
+}
+
+function getOrderDateParam(order) {
+  return String(order?.date_created || order?.date_created_gmt || '').slice(0, 10);
+}
+
+function isOrderWithinRange(order, startDateParam, endDateParam) {
+  const orderDateParam = getOrderDateParam(order);
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(orderDateParam)) {
+    return false;
+  }
+
+  return orderDateParam >= startDateParam && orderDateParam <= endDateParam;
+}
+
+function buildSalesMap(orders, startDateParam, endDateParam) {
+  const salesMap = {};
+
+  for (const order of orders) {
+    if (!isOrderWithinRange(order, startDateParam, endDateParam)) {
+      continue;
+    }
+
+    for (const item of order.line_items || []) {
+      const sku = normalizeSku(item.sku || '');
+
+      if (!sku) {
+        continue;
+      }
+
+      const quantity = Math.max(parseInt(item.quantity || 0, 10) || 0, 1);
+
+      if (!salesMap[sku]) {
+        salesMap[sku] = { rev: 0, count: 0 };
+      }
+
+      salesMap[sku].rev += parseFloat(item.total || 0);
+      salesMap[sku].count += quantity;
+    }
+  }
+
+  return salesMap;
+}
+
+function extractAuditMissingElements(checklist) {
+  if (!Array.isArray(checklist)) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      checklist
+        .filter((item) => item?.status === 'missing')
+        .map((item) => AUDIT_ACTION_LABELS[item.label] || item.label)
+        .filter(Boolean)
+    )
+  );
+}
+
+function isMissingPageAuditStorage(error) {
+  return (
+    error?.code === 'P2021' &&
+    (String(error?.meta?.table || '').includes('PageAudit') || String(error?.message || '').includes('PageAudit'))
+  );
 }
 
 async function fetchOptimizationLogs(storeId, learningPeriodStart) {
@@ -36,6 +172,101 @@ async function fetchOptimizationLogs(storeId, learningPeriodStart) {
   }
 }
 
+async function fetchProductMetaRecords(storeId) {
+  try {
+    return await prisma.productMeta.findMany({
+      where: { storeId },
+    });
+  } catch (error) {
+    if (isMissingProductMetaStorage(error)) {
+      return [];
+    }
+
+    throw error;
+  }
+}
+
+async function fetchLatestPageAudits(storeId) {
+  try {
+    return await prisma.pageAudit.findMany({
+      where: { storeId },
+      select: {
+        sku: true,
+        score: true,
+        checklist: true,
+        createdAt: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+  } catch (error) {
+    if (isMissingPageAuditStorage(error)) {
+      return [];
+    }
+
+    throw error;
+  }
+}
+
+async function fetchAllWooCommerceProducts(client) {
+  const allProducts = [];
+  let page = 1;
+  const perPage = 100;
+
+  while (true) {
+    const response = await client.get('products', {
+      per_page: perPage,
+      page,
+      status: 'publish',
+    });
+
+    allProducts.push(...response.data);
+
+    if (response.data.length < perPage) {
+      break;
+    }
+
+    page += 1;
+  }
+
+  return { data: allProducts };
+}
+
+async function fetchAllWooCommerceOrders(client, startBoundary, endBoundary) {
+  const allOrders = [];
+  let page = 1;
+  const perPage = 100;
+  const after = new Date(
+    startBoundary.getTime() - WOO_ORDER_FETCH_BUFFER_DAYS * 24 * 60 * 60 * 1000
+  ).toISOString();
+  const before = new Date(
+    endBoundary.getTime() + WOO_ORDER_FETCH_BUFFER_DAYS * 24 * 60 * 60 * 1000
+  ).toISOString();
+
+  while (true) {
+    const response = await client.get('orders', {
+      after,
+      before,
+      order: 'asc',
+      orderby: 'date',
+      page,
+      per_page: perPage,
+      status: RELEVANT_WOO_ORDER_STATUSES.join(','),
+    });
+
+    allOrders.push(...response.data);
+
+    if (response.data.length < perPage) {
+      break;
+    }
+
+    page += 1;
+  }
+
+  return { data: allOrders };
+}
+
 export async function GET(request) {
   try {
     const { user } = await getAuthenticatedUser();
@@ -46,69 +277,58 @@ export async function GET(request) {
 
     const { searchParams } = new URL(request.url);
     const storeId = searchParams.get('storeId');
-    const startParam = searchParams.get('start');
-    const endParam = searchParams.get('end');
+    const requestedStartDateParam = searchParams.get('start')?.trim() || '';
+    const requestedEndDateParam = searchParams.get('end')?.trim() || '';
 
     if (!storeId) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'storeId is required' 
-      }, { status: 400 });
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'storeId is required',
+        },
+        { status: 400 }
+      );
     }
 
     const store = await getAccessibleStore(user, storeId);
 
     if (!store) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Store not found or access denied'
-      }, { status: 404 });
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Store not found or access denied',
+        },
+        { status: 404 }
+      );
     }
+
+    const { startDateParam, endDateParam } =
+      requestedStartDateParam && requestedEndDateParam
+        ? {
+            startDateParam: requestedStartDateParam,
+            endDateParam: requestedEndDateParam,
+          }
+        : getDefaultDateRange();
+
+    const startBoundary = parseDateParam(startDateParam, false);
+    const endBoundary = parseDateParam(endDateParam, true);
+
+    if (!startBoundary || !endBoundary || startBoundary > endBoundary) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Valid start and end dates are required in YYYY-MM-DD format',
+        },
+        { status: 400 }
+      );
+    }
+
+    const trailingStartDateParam = shiftDateParam(endDateParam, -(TRAILING_SALES_WINDOW_DAYS - 1));
+    const trailingStartBoundary = parseDateParam(trailingStartDateParam, false);
 
     const learningPeriodStart = new Date();
     learningPeriodStart.setDate(learningPeriodStart.getDate() - LEARNING_PERIOD_DAYS);
 
-    let startDate = new Date();
-    let endDate = new Date();
-    
-    if (startParam && endParam) {
-      startDate = new Date(startParam);
-      endDate = new Date(endParam);
-    } else {
-      startDate.setDate(startDate.getDate() - 30);
-    }
-
-    const formatDateGoogle = (date) => date.toISOString().split('T')[0].replace(/-/g, '');
-    const startGoogle = formatDateGoogle(startDate);
-    const endGoogle = formatDateGoogle(endDate);
-
-    // Helper function to fetch all WooCommerce products with pagination
-    async function fetchAllWooCommerceProducts(client) {
-      const allProducts = [];
-      let page = 1;
-      const perPage = 100;
-      
-      while (true) {
-        const response = await client.get('products', {
-          per_page: perPage,
-          page: page,
-          status: 'publish'
-        });
-        
-        allProducts.push(...response.data);
-        
-        // Check if we got less than perPage results (last page)
-        if (response.data.length < perPage) {
-          break;
-        }
-        
-        page++;
-      }
-      
-      return { data: allProducts };
-    }
-
-    // Initialize API clients
     const customer = getGoogleAdsClient({
       googleClientId: store.googleClientId,
       googleClientSecret: store.googleClientSecret,
@@ -124,119 +344,189 @@ export async function GET(request) {
       wooCs: store.wooCs,
     });
 
-    // Google Ads query
     const googleQuery = `
       SELECT
         segments.product_item_id,
         metrics.clicks,
         metrics.cost_micros
       FROM shopping_performance_view
-      WHERE segments.date BETWEEN '${startGoogle}' AND '${endGoogle}'
+      WHERE segments.date BETWEEN '${formatDateGoogle(startDateParam)}' AND '${formatDateGoogle(endDateParam)}'
     `;
 
-    // 1. Fetch Google Ads Data and WooCommerce Data in parallel
-    const [googleResults, wooOrdersResponse, wooProductsResponse, optimizationLogs] = await Promise.all([
+    const [
+      googleResults,
+      selectedOrdersResponse,
+      trailingOrdersResponse,
+      wooProductsResponse,
+      optimizationLogs,
+      productMetaRecords,
+      latestPageAudits,
+    ] = await Promise.all([
       customer.query(googleQuery),
-      wooClient.get('orders', {
-        after: startDate.toISOString(),
-        before: endDate.toISOString(),
-        per_page: 100,
-        status: 'processing,completed'
-      }),
+      fetchAllWooCommerceOrders(wooClient, startBoundary, endBoundary),
+      fetchAllWooCommerceOrders(wooClient, trailingStartBoundary, endBoundary),
       fetchAllWooCommerceProducts(wooClient),
       fetchOptimizationLogs(storeId, learningPeriodStart),
+      fetchProductMetaRecords(storeId),
+      fetchLatestPageAudits(storeId),
     ]);
 
-    // Process Google Ads data
     const googleMap = {};
     for (const row of googleResults) {
       const sku = normalizeSku(row.segments?.product_item_id || '');
-      if (!sku) continue;
-      if (!googleMap[sku]) googleMap[sku] = { clicks: 0, cost: 0 };
-      googleMap[sku].clicks += parseInt(row.metrics?.clicks || 0);
-      googleMap[sku].cost += (parseFloat(row.metrics?.cost_micros || 0) / 1000000);
-    }
 
-    // Process WooCommerce Orders data
-    const wooMap = {};
-    for (const order of wooOrdersResponse.data) {
-      for (const item of order.line_items || []) {
-        const sku = normalizeSku(item.sku || '');
-        if (!sku) continue;
-        if (!wooMap[sku]) wooMap[sku] = { rev: 0, count: 0 };
-        wooMap[sku].rev += parseFloat(item.total || 0);
-        wooMap[sku].count += 1;
+      if (!sku) {
+        continue;
       }
+
+      if (!googleMap[sku]) {
+        googleMap[sku] = { clicks: 0, cost: 0 };
+      }
+
+      googleMap[sku].clicks += parseInt(row.metrics?.clicks || 0, 10);
+      googleMap[sku].cost += parseFloat(row.metrics?.cost_micros || 0) / 1000000;
     }
 
-    // Process WooCommerce Products data for inventory
+    const wooMap = buildSalesMap(selectedOrdersResponse.data, startDateParam, endDateParam);
+    const trailingSalesMap = buildSalesMap(
+      trailingOrdersResponse.data,
+      trailingStartDateParam,
+      endDateParam
+    );
+
     const inventoryMap = {};
     for (const product of wooProductsResponse.data) {
       const sku = normalizeSku(product.sku || '');
-      if (!sku) continue;
+
+      if (!sku) {
+        continue;
+      }
+
       inventoryMap[sku] = {
-        stock_status: product.stock_status || 'outofstock',
-        stock_quantity: parseInt(product.stock_quantity || 0),
-        price: parseFloat(product.price || 0),
-        productUrl: product.permalink || '',
         productName: product.name || '',
+        productUrl: product.permalink || '',
+        price: parseFloat(product.price || 0),
+        stock_quantity: parseInt(product.stock_quantity || 0, 10) || 0,
+        stock_status: product.stock_status || 'outofstock',
       };
     }
 
     const optimizationMap = {};
     for (const log of optimizationLogs) {
       const sku = normalizeSku(log.sku);
-      if (!sku || optimizationMap[sku]) continue;
+
+      if (!sku || optimizationMap[sku]) {
+        continue;
+      }
+
       optimizationMap[sku] = log;
     }
 
-    // 3. Final Merge
-    const allSkus = new Set([...Object.keys(googleMap), ...Object.keys(wooMap), ...Object.keys(inventoryMap)]);
-    const report = Array.from(allSkus).map(sku => {
-      const g = googleMap[sku] || { clicks: 0, cost: 0 };
-      const w = wooMap[sku] || { rev: 0, count: 0 };
-      const inv = inventoryMap[sku] || {
-        stock_status: 'unknown',
-        stock_quantity: 0,
-        price: 0,
-        productUrl: '',
+    const productMetaMap = {};
+    for (const record of productMetaRecords) {
+      const sku = normalizeSku(record.normalizedSku || record.sku);
+
+      if (!sku) {
+        continue;
+      }
+
+      productMetaMap[sku] = record;
+    }
+
+    const latestAuditMap = {};
+    for (const audit of latestPageAudits) {
+      const sku = normalizeSku(audit.sku);
+
+      if (!sku || latestAuditMap[sku]) {
+        continue;
+      }
+
+      latestAuditMap[sku] = {
+        createdAt: audit.createdAt,
+        missingElements: audit.score < 90 ? extractAuditMissingElements(audit.checklist) : [],
+        score: audit.score,
+      };
+    }
+
+    const allSkus = new Set([
+      ...Object.keys(googleMap),
+      ...Object.keys(wooMap),
+      ...Object.keys(trailingSalesMap),
+      ...Object.keys(inventoryMap),
+      ...Object.keys(productMetaMap),
+    ]);
+
+    const report = Array.from(allSkus).map((sku) => {
+      const googleMetrics = googleMap[sku] || { clicks: 0, cost: 0 };
+      const salesMetrics = wooMap[sku] || { rev: 0, count: 0 };
+      const trailingSales = trailingSalesMap[sku] || { rev: 0, count: 0 };
+      const inventory = inventoryMap[sku] || {
         productName: '',
+        productUrl: '',
+        price: 0,
+        stock_quantity: 0,
+        stock_status: 'unknown',
+      };
+      const productMeta = productMetaMap[sku] || {
+        costPrice: 0,
+        leadTime: 0,
+        minSalesTarget: 0,
       };
       const optimizationLog = optimizationMap[sku] || null;
-      const acos = w.rev > 0 ? (g.cost / w.rev) * 100 : 0;
-      const convRate = g.clicks > 0 ? (w.count / g.clicks) * 100 : 0;
+      const latestAudit = latestAuditMap[sku] || null;
+      const acos = salesMetrics.rev > 0 ? (googleMetrics.cost / salesMetrics.rev) * 100 : 0;
+      const convRate = googleMetrics.clicks > 0 ? (salesMetrics.count / googleMetrics.clicks) * 100 : 0;
+      const adCostPerSale =
+        salesMetrics.count > 0 ? googleMetrics.cost / salesMetrics.count : null;
+      const profitPerSale =
+        adCostPerSale === null ? null : inventory.price - (productMeta.costPrice + adCostPerSale);
+      const stockDaysRemaining =
+        inventory.stock_quantity <= 0
+          ? 0
+          : trailingSales.count > 0
+            ? inventory.stock_quantity / (trailingSales.count / TRAILING_SALES_WINDOW_DAYS)
+            : null;
 
       return {
-        sku: sku.toUpperCase(),
-        clicks: g.clicks,
-        adCost: g.cost.toFixed(2),
-        revenue: w.rev.toFixed(2),
-        salesCount: w.count,
+        actionTaken: optimizationLog?.actionTaken || null,
         acos: acos.toFixed(2),
+        adCost: googleMetrics.cost.toFixed(2),
+        adCostPerSale: adCostPerSale === null ? null : adCostPerSale.toFixed(2),
+        auditMissingElements: latestAudit?.missingElements || [],
+        auditScore: latestAudit?.score ?? null,
+        clicks: googleMetrics.clicks,
         convRate: convRate.toFixed(2),
-        stock_status: inv.stock_status,
-        stock_quantity: inv.stock_quantity,
-        price: inv.price.toFixed(2),
-        productUrl: inv.productUrl,
-        productName: inv.productName,
+        costPrice: Number(productMeta.costPrice || 0).toFixed(2),
+        latestAuditAt: latestAudit?.createdAt || null,
+        leadTime: productMeta.leadTime || 0,
         learningPhase: Boolean(optimizationLog),
+        minSalesTarget: productMeta.minSalesTarget || 0,
         optimizedAt: optimizationLog?.appliedAt || null,
-        actionTaken: optimizationLog?.actionTaken || null
+        price: inventory.price.toFixed(2),
+        productName: inventory.productName,
+        productUrl: inventory.productUrl,
+        profitPerSale: profitPerSale === null ? null : profitPerSale.toFixed(2),
+        revenue: salesMetrics.rev.toFixed(2),
+        salesCount: salesMetrics.count,
+        salesLast30: trailingSales.count,
+        sku: sku.toUpperCase(),
+        stock_quantity: inventory.stock_quantity,
+        stock_status: inventory.stock_status,
+        stockDaysRemaining:
+          stockDaysRemaining === null ? null : Number(stockDaysRemaining.toFixed(1)),
       };
     });
 
-    // Filter to show only products with clicks > 0 or salesCount > 0
-    const filteredReport = report.filter(item => 
-      parseInt(item.clicks) > 0 || parseInt(item.salesCount) > 0
+    const filteredReport = report.filter(
+      (item) => parseInt(item.clicks, 10) > 0 || parseInt(item.salesCount, 10) > 0
     );
 
-    return NextResponse.json({ 
-      success: true, 
-      data: filteredReport.sort((a, b) => b.clicks - a.clicks) 
+    return NextResponse.json({
+      success: true,
+      data: filteredReport.sort((a, b) => b.clicks - a.clicks),
     });
-
   } catch (error) {
-    console.error("API Error:", error);
+    console.error('API Error:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }

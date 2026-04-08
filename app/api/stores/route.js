@@ -3,7 +3,7 @@ import { prisma } from '../../../lib/prisma.js';
 import { getAuthenticatedUser, isSuperAdmin, runStoreOperationWithAuditPrompt } from '../../../lib/auth-helpers.js';
 import { normalizeAuditPrompt } from '../../../lib/page-audit.js';
 
-export async function GET() {
+export async function GET(request) {
   try {
     const { user } = await getAuthenticatedUser();
 
@@ -11,8 +11,11 @@ export async function GET() {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
+    const linkedOnly = new URL(request.url).searchParams.get('scope') === 'linked';
+
     const stores = await prisma.store.findMany({
-      where: isSuperAdmin(user) ? {} : { userId: user.id },
+      where: linkedOnly || !isSuperAdmin(user) ? { userId: user.id } : {},
+      orderBy: [{ name: 'asc' }, { createdAt: 'asc' }],
       select: {
         id: true,
         name: true,

@@ -1,16 +1,39 @@
 'use client';
 
-import { useState } from 'react';
-import { signIn, getSession } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { signIn, getSession, useSession } from 'next-auth/react';
+import Link from 'next/link';
 import { TrendingUp } from 'lucide-react';
+import { getPostAuthRedirectPath } from '@/lib/post-auth-redirect.js';
 
 export default function Login() {
+  const { data: session, status } = useSession();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const router = useRouter();
+
+  useEffect(() => {
+    if (status !== 'authenticated') {
+      return;
+    }
+
+    let isMounted = true;
+
+    async function redirectAuthenticatedUser() {
+      const targetPath = await getPostAuthRedirectPath(session?.user);
+
+      if (isMounted) {
+        window.location.replace(targetPath);
+      }
+    }
+
+    redirectAuthenticatedUser();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [session, status]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -26,10 +49,13 @@ export default function Login() {
     console.log('Sign in result:', result);
 
     if (result?.ok) {
-      const session = await getSession();
-      router.push(session?.user?.role === 'SUPER_ADMIN' ? '/admin' : '/');
+      const activeSession = await getSession();
+      const targetPath = await getPostAuthRedirectPath(activeSession?.user);
+      window.location.assign(targetPath);
     } else {
       setError('Invalid credentials');
+      setLoading(false);
+      return;
     }
 
     setLoading(false);
@@ -82,6 +108,13 @@ export default function Login() {
             {loading ? 'Signing In...' : 'Sign In'}
           </button>
         </form>
+
+        <p className="mt-6 text-center text-sm text-slate-500">
+          New here?{' '}
+          <Link href="/register" className="font-semibold text-blue-600 hover:text-blue-700">
+            Create your account
+          </Link>
+        </p>
       </div>
     </div>
   );

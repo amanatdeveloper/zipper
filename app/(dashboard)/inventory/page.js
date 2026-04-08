@@ -1,12 +1,10 @@
 'use client';
 export const dynamic = 'force-dynamic';
 import { useState, useEffect, Suspense } from 'react';
-import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { RefreshCw, ExternalLink, Package } from 'lucide-react';
 
 function InventoryContent() {
-  const { data: session, status } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [store, setStore] = useState(null);
@@ -14,12 +12,6 @@ function InventoryContent() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (status === 'loading') return;
-    if (!session) {
-      router.push('/login');
-      return;
-    }
-
     const storeId = searchParams.get('storeId');
     if (!storeId) {
       setStore(null);
@@ -29,7 +21,7 @@ function InventoryContent() {
 
     fetchStore(storeId);
     fetchProducts(storeId);
-  }, [session, status, router, searchParams]);
+  }, [router, searchParams]);
 
   const fetchStore = async (storeId) => {
     try {
@@ -38,11 +30,11 @@ function InventoryContent() {
       if (result.success) {
         setStore(result.data);
       } else {
-        router.push('/');
+        router.push('/dashboard');
       }
     } catch (e) {
       console.error(e);
-      router.push('/');
+      router.push('/dashboard');
     }
   };
 
@@ -70,14 +62,6 @@ function InventoryContent() {
       return <span className="bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs font-medium">In Stock ({product.stock_quantity})</span>;
     }
   };
-
-  if (status === 'loading') {
-    return <div className="min-h-screen bg-slate-50 flex items-center justify-center">Loading...</div>;
-  }
-
-  if (!session) {
-    return null;
-  }
 
   if (!searchParams.get('storeId')) {
     return (

@@ -52,6 +52,7 @@ model Store {
   user             User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
   optimizationLogs OptimizationLog[]
   pageAudits       PageAudit[]
+  productMetas     ProductMeta[]
 
   @@index([userId])
 }
@@ -83,4 +84,21 @@ model PageAudit {
 
   @@index([storeId, sku, createdAt])
   @@index([storeId, url, createdAt])
+}
+
+model ProductMeta {
+  id             String   @id @default(cuid())
+  sku            String
+  normalizedSku  String
+  storeId        String
+  costPrice      Float    @default(0)
+  leadTime       Int      @default(0)
+  minSalesTarget Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, normalizedSku])
+  @@index([storeId, sku])
 }

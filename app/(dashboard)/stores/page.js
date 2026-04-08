@@ -22,7 +22,7 @@ function StoresRedirectContent() {
       return;
     }
 
-    router.replace('/');
+    router.replace('/dashboard');
   }, [router, session, status]);
 
   return <div className="min-h-screen bg-slate-50 flex items-center justify-center">Redirecting...</div>;
