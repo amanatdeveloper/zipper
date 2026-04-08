@@ -1,5 +1,10 @@
 import Link from 'next/link'
+import { getServerSession } from 'next-auth'
+import { redirect } from 'next/navigation'
 import { ArrowRight, CheckCircle2, Cpu, ShieldCheck, Sparkles, TrendingUp } from 'lucide-react'
+import { authOptions } from '@/app/api/auth/[...nextauth]/route.js'
+
+export const dynamic = 'force-dynamic'
 
 const features = [
   {
@@ -19,7 +24,12 @@ const features = [
   },
 ]
 
-export default function MarketingPage() {
+export default async function MarketingPage() {
+  const session = await getServerSession(authOptions)
+
+  if (session?.user?.id) {
+    redirect('/dashboard')
+  }
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
