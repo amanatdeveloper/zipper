@@ -7,6 +7,10 @@ import Header from '@/components/Header.js'
 import Sidebar from '@/components/Sidebar.js'
 import DashboardContentWrapper from '@/components/DashboardContentWrapper.js'
 
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+export const fetchCache = 'force-no-store'
+
 export default async function DashboardLayout({ children }) {
   const session = await getServerSession(authOptions)
 
