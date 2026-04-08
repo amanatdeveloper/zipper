@@ -22,6 +22,8 @@ const features = [
   },
 ]
 
+export const dynamic = 'force-dynamic'
+
 export default async function MarketingPage() {
   const session = await getServerSession(authOptions)
 
