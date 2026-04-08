@@ -1,20 +1,29 @@
 'use client';
-import { useSession, signOut } from 'next-auth/react';
+import Link from 'next/link';
+import { signOut } from 'next-auth/react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { BarChart3, Package, Brain, Settings, LogOut, User } from 'lucide-react';
 
-const Sidebar = ({ userRole }) => {
-  const { data: session } = useSession();
+function buildStoreHref(path, storeId) {
+  return storeId ? `${path}?storeId=${storeId}` : path;
+}
+
+const Sidebar = ({ sessionUser }) => {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const storeId = searchParams.get('storeId');
-  const isStoreUser = userRole === 'STORE_USER';
+  const isStoreUser = sessionUser?.role === 'STORE_USER';
+  const isOnboarding = pathname === '/onboarding';
+
+  if (isOnboarding) {
+    return null;
+  }
 
   const baseItems = [
-    { name: 'Dashboard', href: `/?storeId=${storeId}`, icon: BarChart3 },
-    { name: 'Inventory', href: `/inventory?storeId=${storeId}`, icon: Package },
-    { name: 'Optimization Logs', href: `/optimization-logs?storeId=${storeId}`, icon: Brain },
+    { name: 'Dashboard', href: buildStoreHref('/dashboard', storeId), icon: BarChart3 },
+    { name: 'Inventory', href: buildStoreHref('/inventory', storeId), icon: Package },
+    { name: 'Optimization Logs', href: buildStoreHref('/optimization-logs', storeId), icon: Brain },
   ];
 
   const adminItems = [
@@ -39,7 +48,7 @@ const Sidebar = ({ userRole }) => {
         <ul className="space-y-2">
           {menuItems.map((item) => (
             <li key={item.name}>
-              <a
+              <Link
                 href={item.disabled ? '#' : item.href}
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
                   pathname === item.href.split('?')[0] && !item.disabled
@@ -49,7 +58,7 @@ const Sidebar = ({ userRole }) => {
               >
                 <item.icon size={20} />
                 <span className="font-medium">{item.name}</span>
-              </a>
+              </Link>
             </li>
           ))}
         </ul>
@@ -61,8 +70,8 @@ const Sidebar = ({ userRole }) => {
             <User size={16} />
           </div>
           <div>
-            <p className="text-sm font-medium">{session?.user?.email}</p>
-            <p className="text-xs text-slate-400">{session?.user?.role || 'Logged in'}</p>
+            <p className="text-sm font-medium">{sessionUser?.email}</p>
+            <p className="text-xs text-slate-400">{sessionUser?.role || 'Logged in'}</p>
           </div>
         </div>
         <button
