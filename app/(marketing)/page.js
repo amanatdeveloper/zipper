@@ -24,6 +24,8 @@ const features = [
   },
 ]
 
+export const dynamic = 'force-dynamic'
+
 export default function MarketingPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
