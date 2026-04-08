@@ -1,8 +1,3 @@
-'use client';
-
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { useSession } from 'next-auth/react';
 import Link from 'next/link'
 import { ArrowRight, CheckCircle2, Cpu, ShieldCheck, Sparkles, TrendingUp } from 'lucide-react'
 
@@ -24,25 +19,7 @@ const features = [
   },
 ]
 
-export const dynamic = 'force-dynamic'
-
 export default function MarketingPage() {
-  const { data: session, status } = useSession();
-  const router = useRouter();
-
-  useEffect(() => {
-    if (status === 'authenticated' && session?.user?.id) {
-      router.replace('/dashboard');
-    }
-  }, [session, status, router]);
-
-  if (status === 'loading') {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="text-white">Loading...</div>
-      </div>
-    );
-  }
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
