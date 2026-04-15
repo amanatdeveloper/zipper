@@ -24,6 +24,30 @@ const Header = ({ sessionUser }) => {
   }, [pathname, sessionUser?.id]);
 
   useEffect(() => {
+    if (!sessionUser?.id) {
+      return;
+    }
+
+    const refreshOnFocus = () => {
+      fetchStores();
+    };
+
+    const refreshOnVisible = () => {
+      if (document.visibilityState === 'visible') {
+        fetchStores();
+      }
+    };
+
+    window.addEventListener('focus', refreshOnFocus);
+    document.addEventListener('visibilitychange', refreshOnVisible);
+
+    return () => {
+      window.removeEventListener('focus', refreshOnFocus);
+      document.removeEventListener('visibilitychange', refreshOnVisible);
+    };
+  }, [sessionUser?.id]);
+
+  useEffect(() => {
     if (!isStoreScopedPage || storeId || stores.length === 0) {
       return;
     }
@@ -36,7 +60,7 @@ const Header = ({ sessionUser }) => {
   const fetchStores = async () => {
     setLoadingStores(true);
     try {
-      const res = await fetch('/api/stores?scope=linked');
+      const res = await fetch('/api/stores?scope=linked', { cache: 'no-store' });
       const result = await res.json();
       if (result.success) {
         setStores(result.data);
