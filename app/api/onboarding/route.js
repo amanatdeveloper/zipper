@@ -40,10 +40,11 @@ export async function POST(request) {
     const wooCk = typeof body?.wooCk === 'string' ? body.wooCk.trim() : '';
     const wooCs = typeof body?.wooCs === 'string' ? body.wooCs.trim() : '';
     const googleCustomerId = typeof body?.googleCustomerId === 'string' ? body.googleCustomerId.trim() : '';
+    const googleRefreshToken = typeof body?.googleRefreshToken === 'string' ? body.googleRefreshToken.trim() : '';
 
-    if (!name || !wooUrl || !wooCk || !wooCs || !googleCustomerId) {
+    if (!name || !wooUrl || !wooCk || !wooCs || !googleCustomerId || !googleRefreshToken) {
       return NextResponse.json(
-        { success: false, error: 'Store name, URL, WooCommerce credentials, and Google Ads customer ID are required' },
+        { success: false, error: 'Store name, URL, WooCommerce credentials, Google Ads customer ID, and refresh token are required' },
         { status: 400 }
       );
     }
@@ -53,10 +54,10 @@ export async function POST(request) {
         data: {
           userId: user.id,
           name,
-          googleClientId: '',
-          googleClientSecret: '',
-          googleDeveloperToken: '',
-          googleRefreshToken: '',
+          googleClientId: process.env.GOOGLE_CLIENT_ID || '',
+          googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+          googleDeveloperToken: process.env.GOOGLE_ADS_DEVELOPER_TOKEN || '',
+          googleRefreshToken,
           googleCustomerId,
           googleLoginCustomerId: googleCustomerId,
           wooUrl,

@@ -8,7 +8,7 @@ import { ArrowLeft, CheckCircle2, CreditCard, ShieldCheck, Store, Zap } from 'lu
 const steps = [
   { id: 1, title: 'Store details', description: 'Name your store and enter your WooCommerce site URL.' },
   { id: 2, title: 'WooCommerce credentials', description: 'Add the API key and secret that your store will use.' },
-  { id: 3, title: 'Google Ads', description: 'Provide the Google Ads customer ID for reporting and optimization.' },
+  { id: 3, title: 'Google Ads', description: 'Connect your Google Ads account for reporting and optimization.' },
 ];
 
 export default function OnboardingPage() {
@@ -25,7 +25,36 @@ export default function OnboardingPage() {
     wooCs: '',
     googleCustomerId: '',
   });
+  const [googleAccounts, setGoogleAccounts] = useState([]);
+  const [googleRefreshToken, setGoogleRefreshToken] = useState('');
+  const [isGoogleConnected, setIsGoogleConnected] = useState(false);
   const [linkedStoreCount, setLinkedStoreCount] = useState(null);
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  // Restore form data from localStorage on mount
+  useEffect(() => {
+    try {
+      const savedData = localStorage.getItem('onboarding_form_data');
+      if (savedData) {
+        const parsed = JSON.parse(savedData);
+        setStoreData(parsed);
+      }
+    } catch (err) {
+      console.error('Failed to restore form data:', err);
+    }
+    setIsHydrated(true);
+  }, []);
+
+  // Save form data to localStorage whenever it changes
+  useEffect(() => {
+    if (isHydrated) {
+      try {
+        localStorage.setItem('onboarding_form_data', JSON.stringify(storeData));
+      } catch (err) {
+        console.error('Failed to save form data:', err);
+      }
+    }
+  }, [storeData, isHydrated]);
 
   const activeStep = useMemo(() => steps.find((item) => item.id === step) || steps[0], [step]);
 
@@ -34,6 +63,45 @@ export default function OnboardingPage() {
       router.replace('/login');
     }
   }, [status, router]);
+
+  useEffect(() => {
+    // Handle Google OAuth callback
+    const urlParams = new URLSearchParams(window.location.search);
+    const accountsParam = urlParams.get('google_accounts');
+    const refreshTokenParam = urlParams.get('google_refresh_token');
+    const errorParam = urlParams.get('error');
+    const authSuccessParam = urlParams.get('auth_success');
+
+    if (errorParam) {
+      setError(decodeURIComponent(errorParam));
+      // Clean up URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    if (authSuccessParam) {
+      setIsGoogleConnected(true);
+      if (refreshTokenParam) {
+        setGoogleRefreshToken(decodeURIComponent(refreshTokenParam));
+      }
+
+      if (accountsParam) {
+        try {
+          const accounts = JSON.parse(decodeURIComponent(accountsParam));
+          if (Array.isArray(accounts) && accounts.length > 0) {
+            setGoogleAccounts(accounts);
+            if (accounts.length === 1) {
+              setStoreData(prev => ({ ...prev, googleCustomerId: accounts[0].customerId }));
+            }
+          }
+        } catch (err) {
+          console.error('Failed to parse Google Ads accounts:', err);
+        }
+      }
+      setStep(3); // Go to step 3
+      // Clean up URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
 
   useEffect(() => {
     const fetchStores = async () => {
@@ -67,10 +135,10 @@ export default function OnboardingPage() {
       return Boolean(storeData.wooCk.trim() && storeData.wooCs.trim());
     }
     if (step === 3) {
-      return Boolean(storeData.googleCustomerId.trim());
+      return Boolean(isGoogleConnected && storeData.googleCustomerId.trim());
     }
     return false;
-  }, [step, storeData]);
+  }, [step, storeData, isGoogleConnected]);
 
   const handleChange = (field) => (event) => {
     setStoreData((current) => ({ ...current, [field]: event.target.value }));
@@ -97,12 +165,20 @@ export default function OnboardingPage() {
           wooCk: storeData.wooCk,
           wooCs: storeData.wooCs,
           googleCustomerId: storeData.googleCustomerId,
+          googleRefreshToken,
         }),
       });
 
       const result = await res.json();
       if (!res.ok || !result.success) {
         throw new Error(result.error || 'Could not complete onboarding');
+      }
+
+      // Clear saved form data on successful onboarding
+      try {
+        localStorage.removeItem('onboarding_form_data');
+      } catch (err) {
+        console.error('Failed to clear form data:', err);
       }
 
       setSuccessMessage('Your store is connected. Redirecting to your dashboard…');
@@ -202,19 +278,80 @@ export default function OnboardingPage() {
 
               {step === 3 && (
                 <>
-                  <label className="block">
-                    <span className="text-sm font-semibold text-slate-700">Google Ads Customer ID</span>
-                    <input
-                      value={storeData.googleCustomerId}
-                      onChange={handleChange('googleCustomerId')}
-                      placeholder="123-456-7890"
-                      className="mt-2 w-full rounded-3xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                      required
-                    />
-                  </label>
-                  <p className="text-sm text-slate-500">
-                    This ID helps Zipper connect your Google Ads account for reporting and recommendation workflows.
-                  </p>
+                  {!isGoogleConnected ? (
+                    <div className="space-y-4">
+                      <p className="text-sm text-slate-600">
+                        Connect your Google Ads account to enable reporting and optimization features.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => window.location.href = '/api/auth/google-ads/login'}
+                        className="inline-flex items-center justify-center rounded-3xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
+                      >
+                        Connect with Google Ads
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      {googleAccounts.length > 1 ? (
+                        <label className="block">
+                          <span className="text-sm font-semibold text-slate-700">Select your Google Ads Account</span>
+                          <select
+                            value={storeData.googleCustomerId}
+                            onChange={(e) => {
+                              const selectedAccount = googleAccounts.find(acc => acc.customerId === e.target.value);
+                              if (selectedAccount) {
+                                setStoreData(prev => ({ ...prev, googleCustomerId: selectedAccount.customerId }));
+                              }
+                            }}
+                            className="mt-2 w-full rounded-3xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                            required
+                          >
+                            <option value="">Choose an account...</option>
+                            {googleAccounts.map((account) => (
+                              <option key={account.customerId} value={account.customerId}>
+                                {account.descriptiveName} ({account.customerId})
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ) : googleAccounts.length === 1 ? (
+                        <div className="space-y-3 rounded-2xl border border-green-200 bg-green-50 p-4">
+                          <p className="text-sm font-semibold text-green-900">
+                            ✓ Connected to: {googleAccounts[0].descriptiveName}
+                          </p>
+                          <p className="text-xs text-green-700">
+                            Customer ID: {googleAccounts[0].customerId}
+                          </p>
+                          <input
+                            type="hidden"
+                            value={googleAccounts[0].customerId}
+                            onChange={handleChange('googleCustomerId')}
+                          />
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          <p className="text-sm text-slate-600">
+                            Google Ads account connected successfully. Please enter your Customer ID below.
+                          </p>
+                          <label className="block">
+                            <span className="text-sm font-semibold text-slate-700">Google Ads Customer ID</span>
+                            <input
+                              value={storeData.googleCustomerId}
+                              onChange={handleChange('googleCustomerId')}
+                              placeholder="123-456-7890"
+                              className="mt-2 w-full rounded-3xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                              required
+                            />
+                          </label>
+                        </div>
+                      )}
+
+                      <p className="text-xs text-slate-500">
+                        This ID helps Zipper connect your Google Ads account for reporting and recommendation workflows.
+                      </p>
+                    </>
+                  )}
                 </>
               )}
 
