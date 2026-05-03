@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { signOut } from 'next-auth/react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
-import { BarChart3, Package, Brain, Settings, LogOut, User } from 'lucide-react';
+import { BarChart3, Brain, Settings, LogOut, User } from 'lucide-react';
 
 function buildStoreHref(path, storeId) {
   return storeId ? `${path}?storeId=${storeId}` : path;
@@ -22,7 +22,6 @@ const Sidebar = ({ sessionUser }) => {
 
   const baseItems = [
     { name: 'Dashboard', href: buildStoreHref('/dashboard', storeId), icon: BarChart3 },
-    { name: 'Inventory', href: buildStoreHref('/inventory', storeId), icon: Package },
     { name: 'Optimization Logs', href: buildStoreHref('/optimization-logs', storeId), icon: Brain },
   ];
 

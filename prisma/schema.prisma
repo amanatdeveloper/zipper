@@ -51,6 +51,7 @@ model Store {
 
   user             User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
   optimizationLogs OptimizationLog[]
+  optimizationHistory OptimizationHistory[]
   pageAudits       PageAudit[]
   productMetas     ProductMeta[]
 
@@ -94,6 +95,7 @@ model ProductMeta {
   costPrice      Float    @default(0)
   leadTime       Int      @default(0)
   minSalesTarget Int      @default(0)
+  isHidden       Boolean  @default(false)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -101,4 +103,20 @@ model ProductMeta {
 
   @@unique([storeId, normalizedSku])
   @@index([storeId, sku])
+}
+
+model OptimizationHistory {
+  id                String   @id @default(cuid())
+  sku               String
+  storeId           String
+  optimizationNotes String   @db.Text
+  acos              Float
+  convRate          Float
+  price             Float
+  snapshotDate      DateTime @default(now())
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, sku, snapshotDate])
+  @@index([storeId, snapshotDate])
 }

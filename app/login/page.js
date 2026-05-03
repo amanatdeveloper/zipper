@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { signIn, getSession, useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { TrendingUp } from 'lucide-react';
-import { getPostAuthRedirectPath } from '@/lib/post-auth-redirect.js';
 
 export default function Login() {
   const { data: session, status } = useSession();
@@ -21,7 +20,7 @@ export default function Login() {
     let isMounted = true;
 
     async function redirectAuthenticatedUser() {
-      const targetPath = await getPostAuthRedirectPath(session?.user);
+      const targetPath = session?.user?.role === 'SUPER_ADMIN' ? '/admin' : '/dashboard';
 
       if (isMounted) {
         window.location.replace(targetPath);
@@ -50,7 +49,7 @@ export default function Login() {
 
     if (result?.ok) {
       const activeSession = await getSession();
-      const targetPath = await getPostAuthRedirectPath(activeSession?.user);
+      const targetPath = activeSession?.user?.role === 'SUPER_ADMIN' ? '/admin' : '/dashboard';
       window.location.assign(targetPath);
     } else {
       setError('Invalid credentials');

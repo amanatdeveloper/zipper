@@ -279,6 +279,8 @@ export async function GET(request) {
     const storeId = searchParams.get('storeId');
     const requestedStartDateParam = searchParams.get('start')?.trim() || '';
     const requestedEndDateParam = searchParams.get('end')?.trim() || '';
+    const showAllProducts = searchParams.get('showAll') === 'true';
+    const showArchived = searchParams.get('showArchived') === 'true';
 
     if (!storeId) {
       return NextResponse.json(
@@ -430,7 +432,12 @@ export async function GET(request) {
         continue;
       }
 
-      productMetaMap[sku] = record;
+      productMetaMap[sku] = {
+        costPrice: record.costPrice,
+        leadTime: record.leadTime,
+        minSalesTarget: record.minSalesTarget,
+        isHidden: record.isHidden || false,
+      };
     }
 
     const latestAuditMap = {};
@@ -471,15 +478,21 @@ export async function GET(request) {
         costPrice: 0,
         leadTime: 0,
         minSalesTarget: 0,
+        isHidden: false,
       };
       const optimizationLog = optimizationMap[sku] || null;
       const latestAudit = latestAuditMap[sku] || null;
       const acos = salesMetrics.rev > 0 ? (googleMetrics.cost / salesMetrics.rev) * 100 : 0;
       const convRate = googleMetrics.clicks > 0 ? (salesMetrics.count / googleMetrics.clicks) * 100 : 0;
+      const safeUnitCost = Number.isFinite(Number(productMeta.costPrice))
+        ? Number(productMeta.costPrice)
+        : 0;
+      const totalCogs = safeUnitCost * salesMetrics.count;
       const adCostPerSale =
         salesMetrics.count > 0 ? googleMetrics.cost / salesMetrics.count : null;
       const profitPerSale =
-        adCostPerSale === null ? null : inventory.price - (productMeta.costPrice + adCostPerSale);
+        adCostPerSale === null ? null : inventory.price - (safeUnitCost + adCostPerSale);
+      const totalProfit = salesMetrics.rev - googleMetrics.cost - totalCogs;
       const stockDaysRemaining =
         inventory.stock_quantity <= 0
           ? 0
@@ -497,6 +510,7 @@ export async function GET(request) {
         clicks: googleMetrics.clicks,
         convRate: convRate.toFixed(2),
         costPrice: Number(productMeta.costPrice || 0).toFixed(2),
+        isHidden: productMeta.isHidden || false,
         latestAuditAt: latestAudit?.createdAt || null,
         leadTime: productMeta.leadTime || 0,
         learningPhase: Boolean(optimizationLog),
@@ -506,6 +520,7 @@ export async function GET(request) {
         productName: inventory.productName,
         productUrl: inventory.productUrl,
         profitPerSale: profitPerSale === null ? null : profitPerSale.toFixed(2),
+        totalProfit: totalProfit.toFixed(2),
         revenue: salesMetrics.rev.toFixed(2),
         salesCount: salesMetrics.count,
         salesLast30: trailingSales.count,
@@ -517,9 +532,19 @@ export async function GET(request) {
       };
     });
 
-    const filteredReport = report.filter(
+    let filteredReport = report.filter(
       (item) => parseInt(item.clicks, 10) > 0 || parseInt(item.salesCount, 10) > 0
     );
+
+    // Filter by ad spend > 0 by default, unless showAllProducts is true
+    if (!showAllProducts) {
+      filteredReport = filteredReport.filter((item) => parseFloat(item.adCost) > 0);
+    }
+
+    // Exclude hidden products unless showArchived is true
+    if (!showArchived) {
+      filteredReport = filteredReport.filter((item) => !item.isHidden);
+    }
 
     return NextResponse.json({
       success: true,

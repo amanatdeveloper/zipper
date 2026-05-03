@@ -12,6 +12,7 @@ export async function GET(request) {
 
     const { searchParams } = new URL(request.url);
     const storeId = searchParams.get('storeId');
+    const sku = searchParams.get('sku');
 
     if (!storeId) {
       return NextResponse.json({ success: false, error: 'storeId is required' }, { status: 400 });
@@ -21,6 +22,22 @@ export async function GET(request) {
 
     if (!store) {
       return NextResponse.json({ success: false, error: 'Store not found or access denied' }, { status: 404 });
+    }
+
+    if (sku) {
+      if (!prisma.optimizationHistory?.findMany) {
+        return NextResponse.json({ success: true, data: [] });
+      }
+
+      const history = await prisma.optimizationHistory.findMany({
+        where: {
+          storeId,
+          sku,
+        },
+        orderBy: { snapshotDate: 'desc' },
+      });
+
+      return NextResponse.json({ success: true, data: history });
     }
 
     if (!prisma.optimizationLog?.findMany) {
@@ -53,6 +70,10 @@ export async function POST(request) {
     const actionTaken = typeof body?.actionTaken === 'string' && body.actionTaken.trim()
       ? body.actionTaken.trim()
       : 'Marked as optimized';
+    const optimizationNotes = typeof body?.optimizationNotes === 'string' ? body.optimizationNotes.trim() : '';
+    const acos = Number(body?.acos);
+    const convRate = Number(body?.convRate);
+    const price = Number(body?.price);
 
     if (!sku || !storeId) {
       return NextResponse.json(
@@ -75,7 +96,27 @@ export async function POST(request) {
       },
     });
 
-    return NextResponse.json({ success: true, data: optimizationLog });
+    let optimizationHistory = null;
+    if (
+      optimizationNotes &&
+      Number.isFinite(acos) &&
+      Number.isFinite(convRate) &&
+      Number.isFinite(price) &&
+      prisma.optimizationHistory?.create
+    ) {
+      optimizationHistory = await prisma.optimizationHistory.create({
+        data: {
+          sku,
+          storeId,
+          optimizationNotes,
+          acos,
+          convRate,
+          price,
+        },
+      });
+    }
+
+    return NextResponse.json({ success: true, data: optimizationLog, history: optimizationHistory });
   } catch (error) {
     console.error('Optimize API Error:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
