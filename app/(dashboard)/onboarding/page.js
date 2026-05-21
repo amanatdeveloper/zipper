@@ -1,18 +1,19 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { ArrowLeft, CheckCircle2, CreditCard, ShieldCheck, Store, Zap } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
 
 const steps = [
-  { id: 1, title: 'Store details', description: 'Name your store and enter your WooCommerce site URL.' },
-  { id: 2, title: 'WooCommerce credentials', description: 'Add the API key and secret that your store will use.' },
+  { id: 1, title: 'Store details', description: 'Name your store and select your e-commerce platform.' },
+  { id: 2, title: 'Platform credentials', description: 'Add the necessary API keys or connect your e-commerce platform.' },
   { id: 3, title: 'Google Ads', description: 'Connect your Google Ads account for reporting and optimization.' },
 ];
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { data: session, status } = useSession();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -20,14 +21,17 @@ export default function OnboardingPage() {
   const [successMessage, setSuccessMessage] = useState('');
   const [storeData, setStoreData] = useState({
     name: '',
+    platform: 'woocommerce', // new: 'woocommerce' or 'shopify'
     wooUrl: '',
     wooCk: '',
     wooCs: '',
+    shopifyShopDomain: '', // new
     googleCustomerId: '',
   });
   const [googleAccounts, setGoogleAccounts] = useState([]);
   const [googleRefreshToken, setGoogleRefreshToken] = useState('');
   const [isGoogleConnected, setIsGoogleConnected] = useState(false);
+  const [isShopifyConnected, setIsShopifyConnected] = useState(false); // new
   const [linkedStoreCount, setLinkedStoreCount] = useState(null);
   const [isHydrated, setIsHydrated] = useState(false);
 
@@ -71,6 +75,7 @@ export default function OnboardingPage() {
     const refreshTokenParam = urlParams.get('google_refresh_token');
     const errorParam = urlParams.get('error');
     const authSuccessParam = urlParams.get('auth_success');
+    const shopifyConnectedParam = urlParams.get('shopify_connected'); // new
 
     if (errorParam) {
       setError(decodeURIComponent(errorParam));
@@ -98,6 +103,15 @@ export default function OnboardingPage() {
         }
       }
       setStep(3); // Go to step 3
+      // Clean up URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    // New: Handle Shopify OAuth callback
+    if (shopifyConnectedParam === 'true') {
+      setIsShopifyConnected(true);
+      setStep(3); // Advance to next step after Shopify connection
+      setSuccessMessage('Shopify store connected successfully! Redirecting to the next step...');
       // Clean up URL
       window.history.replaceState({}, document.title, window.location.pathname);
     }
@@ -129,19 +143,34 @@ export default function OnboardingPage() {
 
   const canAdvance = useMemo(() => {
     if (step === 1) {
-      return Boolean(storeData.name.trim() && storeData.wooUrl.trim());
+      return Boolean(storeData.name.trim() && storeData.platform);
     }
     if (step === 2) {
-      return Boolean(storeData.wooCk.trim() && storeData.wooCs.trim());
+      if (storeData.platform === 'woocommerce') {
+        return Boolean(storeData.wooCk.trim() && storeData.wooCs.trim());
+      } else if (storeData.platform === 'shopify') {
+        // For Shopify, we only need the shopifyShopDomain to initiate connection
+        // The connection success will be handled by the callback and isShopifyConnected state
+        return Boolean(storeData.shopifyShopDomain.trim() && isShopifyConnected);
+      }
     }
     if (step === 3) {
       return Boolean(isGoogleConnected && storeData.googleCustomerId.trim());
     }
     return false;
-  }, [step, storeData, isGoogleConnected]);
+  }, [step, storeData, isGoogleConnected, isShopifyConnected]);
 
   const handleChange = (field) => (event) => {
     setStoreData((current) => ({ ...current, [field]: event.target.value }));
+  };
+
+  const normalizeShopifyDomain = (value) => {
+    if (!value) return '';
+    return value
+      .trim()
+      .toLowerCase()
+      .replace(/^https?:?\/\//, '')
+      .replace(/\/.*$/, '');
   };
 
   const handleSubmit = async (event) => {
@@ -161,9 +190,16 @@ export default function OnboardingPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: storeData.name,
-          wooUrl: storeData.wooUrl,
-          wooCk: storeData.wooCk,
-          wooCs: storeData.wooCs,
+          platform: storeData.platform, // new
+          ...(storeData.platform === 'woocommerce' && {
+            wooUrl: storeData.wooUrl,
+            wooCk: storeData.wooCk,
+            wooCs: storeData.wooCs,
+          }),
+          ...(storeData.platform === 'shopify' && {
+            shopifyShopDomain: storeData.shopifyShopDomain,
+            // shopifyAccessToken is handled server-side during OAuth callback
+          }),
           googleCustomerId: storeData.googleCustomerId,
           googleRefreshToken,
         }),
@@ -191,6 +227,7 @@ export default function OnboardingPage() {
   };
 
   return (
+    <>
     <div className="min-h-screen bg-slate-50 px-4 py-10">
       <div className="mx-auto max-w-4xl">
         <div className="rounded-[2rem] bg-white p-8 shadow-xl border border-slate-200">
@@ -236,43 +273,115 @@ export default function OnboardingPage() {
                     />
                   </label>
 
+                  {/* New: Platform Selection */}
                   <label className="block">
-                    <span className="text-sm font-semibold text-slate-700">WooCommerce Store URL</span>
-                    <input
-                      value={storeData.wooUrl}
-                      onChange={handleChange('wooUrl')}
-                      type="url"
-                      placeholder="https://your-store.com"
+                    <span className="text-sm font-semibold text-slate-700">E-commerce Platform</span>
+                    <select
+                      value={storeData.platform}
+                      onChange={handleChange('platform')}
                       className="mt-2 w-full rounded-3xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                       required
-                    />
+                    >
+                      <option value="woocommerce">WooCommerce</option>
+                      <option value="shopify">Shopify</option>
+                    </select>
                   </label>
+
+                  {storeData.platform === 'woocommerce' && (
+                    <label className="block">
+                      <span className="text-sm font-semibold text-slate-700">WooCommerce Store URL</span>
+                      <input
+                        value={storeData.wooUrl}
+                        onChange={handleChange('wooUrl')}
+                        type="url"
+                        placeholder="https://your-store.com"
+                        className="mt-2 w-full rounded-3xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                        required
+                      />
+                    </label>
+                  )}
+
+                  {storeData.platform === 'shopify' && (
+                    <label className="block">
+                      <span className="text-sm font-semibold text-slate-700">Shopify Store Domain</span>
+                      <input
+                        value={storeData.shopifyShopDomain}
+                        onChange={handleChange('shopifyShopDomain')}
+                        type="text"
+                        inputMode="url"
+                        autoCapitalize="none"
+                        placeholder="your-store.myshopify.com"
+                        className="mt-2 w-full rounded-3xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                        required
+                      />
+                    </label>
+                  )}
                 </>
               )}
 
               {step === 2 && (
                 <>
-                  <label className="block">
-                    <span className="text-sm font-semibold text-slate-700">WooCommerce API Key</span>
-                    <input
-                      value={storeData.wooCk}
-                      onChange={handleChange('wooCk')}
-                      placeholder="Consumer Key"
-                      className="mt-2 w-full rounded-3xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                      required
-                    />
-                  </label>
+                  {storeData.platform === 'woocommerce' && (
+                    <>
+                      <label className="block">
+                        <span className="text-sm font-semibold text-slate-700">WooCommerce API Key</span>
+                        <input
+                          value={storeData.wooCk}
+                          onChange={handleChange('wooCk')}
+                          placeholder="Consumer Key"
+                          className="mt-2 w-full rounded-3xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                          required
+                        />
+                      </label>
 
-                  <label className="block">
-                    <span className="text-sm font-semibold text-slate-700">WooCommerce API Secret</span>
-                    <input
-                      value={storeData.wooCs}
-                      onChange={handleChange('wooCs')}
-                      placeholder="Consumer Secret"
-                      className="mt-2 w-full rounded-3xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                      required
-                    />
-                  </label>
+                      <label className="block">
+                        <span className="text-sm font-semibold text-slate-700">WooCommerce API Secret</span>
+                        <input
+                          value={storeData.wooCs}
+                          onChange={handleChange('wooCs')}
+                          placeholder="Consumer Secret"
+                          className="mt-2 w-full rounded-3xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                          required
+                        />
+                      </label>
+                    </>
+                  )}
+
+                  {storeData.platform === 'shopify' && (
+                    <div className="space-y-4">
+                      {!isShopifyConnected ? (
+                        <>
+                          <p className="text-sm text-slate-600">
+                            Connect your Shopify store by clicking the button below. You will be redirected to Shopify to authorize the connection.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const shopDomain = normalizeShopifyDomain(storeData.shopifyShopDomain);
+                              if (shopDomain) {
+                                setStoreData((current) => ({ ...current, shopifyShopDomain: shopDomain }));
+                                window.location.href = `/api/auth/shopify/login?shop=${encodeURIComponent(shopDomain)}`;
+                              } else {
+                                setError('Please enter your Shopify store domain (e.g. your-store.myshopify.com).');
+                              }
+                            }}
+                            className="inline-flex items-center justify-center rounded-3xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
+                          >
+                            Connect Shopify Store
+                          </button>
+                        </>
+                      ) : (
+                        <div className="space-y-3 rounded-2xl border border-green-200 bg-green-50 p-4">
+                          <p className="text-sm font-semibold text-green-900">
+                            ✓ Shopify Store Connected Successfully!
+                          </p>
+                          <p className="text-xs text-green-700">
+                            Shop domain: {storeData.shopifyShopDomain}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </>
               )}
 
@@ -281,135 +390,83 @@ export default function OnboardingPage() {
                   {!isGoogleConnected ? (
                     <div className="space-y-4">
                       <p className="text-sm text-slate-600">
-                        Connect your Google Ads account to enable reporting and optimization features.
+                        Connect your Google Ads account to enable tracking and optimization features.
                       </p>
                       <button
                         type="button"
-                        onClick={() => window.location.href = '/api/auth/google-ads/login'}
+                        onClick={() => window.location.href = '/api/auth/google'}
                         className="inline-flex items-center justify-center rounded-3xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
                       >
-                        Connect with Google Ads
+                        Connect Google Ads
                       </button>
                     </div>
                   ) : (
-                    <>
-                      {googleAccounts.length > 1 ? (
-                        <label className="block">
-                          <span className="text-sm font-semibold text-slate-700">Select your Google Ads Account</span>
-                          <select
-                            value={storeData.googleCustomerId}
-                            onChange={(e) => {
-                              const selectedAccount = googleAccounts.find(acc => acc.customerId === e.target.value);
-                              if (selectedAccount) {
-                                setStoreData(prev => ({ ...prev, googleCustomerId: selectedAccount.customerId }));
-                              }
-                            }}
-                            className="mt-2 w-full rounded-3xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                            required
-                          >
-                            <option value="">Choose an account...</option>
-                            {googleAccounts.map((account) => (
-                              <option key={account.customerId} value={account.customerId}>
-                                {account.descriptiveName} ({account.customerId})
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      ) : googleAccounts.length === 1 ? (
-                        <div className="space-y-3 rounded-2xl border border-green-200 bg-green-50 p-4">
-                          <p className="text-sm font-semibold text-green-900">
-                            ✓ Connected to: {googleAccounts[0].descriptiveName}
-                          </p>
-                          <p className="text-xs text-green-700">
-                            Customer ID: {googleAccounts[0].customerId}
-                          </p>
-                          <input
-                            type="hidden"
-                            value={googleAccounts[0].customerId}
-                            onChange={handleChange('googleCustomerId')}
-                          />
-                        </div>
-                      ) : (
-                        <div className="space-y-4">
-                          <p className="text-sm text-slate-600">
-                            Google Ads account connected successfully. Please enter your Customer ID below.
-                          </p>
-                          <label className="block">
-                            <span className="text-sm font-semibold text-slate-700">Google Ads Customer ID</span>
-                            <input
-                              value={storeData.googleCustomerId}
-                              onChange={handleChange('googleCustomerId')}
-                              placeholder="123-456-7890"
-                              className="mt-2 w-full rounded-3xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                              required
-                            />
-                          </label>
-                        </div>
-                      )}
-
-                      <p className="text-xs text-slate-500">
-                        This ID helps Zipper connect your Google Ads account for reporting and recommendation workflows.
+                    <div className="space-y-3 rounded-2xl border border-green-200 bg-green-50 p-4">
+                      <p className="text-sm font-semibold text-green-900">
+                        ✓ Google Ads Connected Successfully!
                       </p>
-                    </>
+                      {googleAccounts.length > 0 && (
+                        <p className="text-xs text-green-700">
+                          Connected account: {googleAccounts[0].accountName} ({googleAccounts[0].customerId})
+                        </p>
+                      )}
+                    </div>
                   )}
                 </>
               )}
 
-              {error ? <div className="rounded-3xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
-              {successMessage ? <div className="rounded-3xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{successMessage}</div> : null}
-
-              <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
+              {/* Navigation buttons */}
+              <div className="flex justify-between pt-6">
                 <button
                   type="button"
-                  onClick={() => setStep(Math.max(1, step - 1))}
-                  disabled={step === 1 || loading}
-                  className="inline-flex items-center justify-center rounded-3xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={() => setStep(step - 1)}
+                  disabled={step === 1}
+                  className={`inline-flex items-center justify-center rounded-3xl px-6 py-3 text-sm font-semibold transition ${step === 1 ? 'text-slate-400 cursor-not-allowed' : 'text-blue-600 hover:text-blue-700'}`}
                 >
-                  <ArrowLeft size={16} className="mr-2" /> Back
+                  <ArrowLeft size={16} className="mr-2" />
+                  Previous
                 </button>
-
                 <button
                   type="submit"
                   disabled={!canAdvance || loading}
-                  className="inline-flex items-center justify-center rounded-3xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  className={`inline-flex items-center justify-center rounded-3xl px-6 py-3 text-sm font-semibold transition ${!canAdvance || loading ? 'bg-slate-200 text-slate-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
                 >
-                  {loading ? 'Connecting…' : step === 3 ? 'Finish Onboarding' : 'Continue'}
+                  {loading ? (
+                    <div className="flex items-center">
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      <span className="ml-2">Processing...</span>
+                    </div>
+                  ) : (
+                    step === 3 ? (
+                      <>
+                        <CheckCircle2 size={16} className="mr-2" />
+                        Complete Setup
+                      </>
+                    ) : (
+                      'Next'
+                    )
+                  )}
                 </button>
               </div>
             </form>
           </div>
-
-          <div className="mt-10 grid gap-4 rounded-3xl border border-slate-200 bg-slate-950 p-6 text-white sm:grid-cols-3">
-            <div className="flex items-start gap-3">
-              <div className="mt-1 rounded-2xl bg-blue-600 p-3 text-white">
-                <ShieldCheck size={18} />
-              </div>
-              <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">Secure Setup</p>
-                <p className="mt-1 text-sm text-slate-200">We store credentials securely and only use them for your connected store.</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-3">
-              <div className="mt-1 rounded-2xl bg-blue-600 p-3 text-white">
-                <Zap size={18} />
-              </div>
-              <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">Fast setup</p>
-                <p className="mt-1 text-sm text-slate-200">Complete your first store onboarding in three easy steps.</p>
-              </div>
-            </div>
-            <div className="flex items-start gap-3">
-              <div className="mt-1 rounded-2xl bg-blue-600 p-3 text-white">
-                <CheckCircle2 size={18} />
-              </div>
-              <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">Ready to launch</p>
-                <p className="mt-1 text-sm text-slate-200">Once connected, your dashboard will populate with store insights automatically.</p>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>
+
+    {/* Error and success messages */}
+    {error && (
+      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 rounded-3xl border border-red-200 bg-red-50 px-6 py-4 shadow-lg">
+        <p className="text-sm font-semibold text-red-900">{error}</p>
+      </div>
+    )}
+
+    {successMessage && (
+      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 rounded-3xl border border-green-200 bg-green-50 px-6 py-4 shadow-lg">
+        <p className="text-sm font-semibold text-green-900">{successMessage}</p>
+      </div>
+    )}
+    </>
   );
 }
+

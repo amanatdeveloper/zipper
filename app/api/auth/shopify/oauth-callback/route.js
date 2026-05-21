@@ -1,0 +1,92 @@
+import { NextResponse } from 'next/server';
+import { getServerSession } from "next-auth";
+import { authOptions } from "../../[...nextauth]/route";
+import crypto from 'crypto';
+import prisma from '@/lib/prisma';
+
+export async function GET(request) {
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return new NextResponse("Unauthorized", { status: 401 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const code = searchParams.get('code');
+  const shop = searchParams.get('shop');
+  const hmac = searchParams.get('hmac');
+  const state = searchParams.get('state'); // This would be used to validate against the nonce saved earlier
+
+  if (!code || !shop || !hmac) {
+    return new NextResponse("Missing required parameters from Shopify callback", { status: 400 });
+  }
+
+  const SHOPIFY_CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET;
+  if (!SHOPIFY_CLIENT_SECRET) {
+    return new NextResponse("Server configuration error: Missing Shopify client secret", { status: 500 });
+  }
+
+  // Validate HMAC
+  const map = Array.from(searchParams.entries())
+    .filter(([key, value]) => key !== 'hmac' && key !== 'signature')
+    .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
+    .map(([key, value]) => `${key}=${value}`)
+    .join('&');
+
+  const generatedHash = crypto
+    .createHmac('sha256', SHOPIFY_CLIENT_SECRET)
+    .update(map)
+    .digest('hex');
+
+  if (generatedHash !== hmac) {
+    return new NextResponse("HMAC validation failed", { status: 403 });
+  }
+
+  try {
+    // Exchange authorization code for a permanent access token
+    const tokenResponse = await fetch(`https://${shop}/admin/oauth/access_token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        client_id: process.env.SHOPIFY_CLIENT_ID,
+        client_secret: SHOPIFY_CLIENT_SECRET,
+        code,
+      }),
+    });
+
+    if (!tokenResponse.ok) {
+      const errorData = await tokenResponse.json();
+      console.error("Failed to get Shopify access token:", errorData);
+      return new NextResponse(`Failed to get access token: ${errorData.error_description || tokenResponse.statusText}`, { status: tokenResponse.status });
+    }
+
+    const tokenData = await tokenResponse.json();
+    const accessToken = tokenData.access_token;
+
+    if (!accessToken) {
+      return new NextResponse("Shopify access token not received", { status: 500 });
+    }
+
+    // Save access_token and shop URL to the Store model
+    // Assuming a 'Store' model exists in Prisma and is linked to a 'User'
+    // And a user session is active
+    await prisma.store.upsert({
+      where: { userId_platform: { userId: session.user.id, platform: "shopify" } },
+      update: { shopifyAccessToken: accessToken, shopifyShopDomain: shop },
+      create: {
+        userId: session.user.id,
+        platform: "shopify",
+        shopifyAccessToken: accessToken,
+        shopifyShopDomain: shop,
+      },
+    });
+
+    // Redirect back to onboarding and mark Shopify as connected in the client flow.
+    return NextResponse.redirect(new URL('/dashboard/onboarding?shopify_connected=true', request.url));
+
+  } catch (error) {
+    console.error("Error during Shopify OAuth callback:", error);
+    return new NextResponse("Internal server error during Shopify OAuth", { status: 500 });
+  }
+}
