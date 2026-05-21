@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from "next-auth";
 import { authOptions } from "../../[...nextauth]/route";
 import crypto from 'crypto';
-import { prisma } from '@/lib/prisma';
 
 export async function GET(request) {
   const session = await getServerSession(authOptions);
@@ -68,22 +67,24 @@ export async function GET(request) {
       return new NextResponse("Shopify access token not received", { status: 500 });
     }
 
-    // Save access_token and shop URL to the Store model
-    // Assuming a 'Store' model exists in Prisma and is linked to a 'User'
-    // And a user session is active
-    await prisma.store.upsert({
-      where: { userId_platform: { userId: session.user.id, platform: "shopify" } },
-      update: { shopifyAccessToken: accessToken, shopifyShopDomain: shop },
-      create: {
-        userId: session.user.id,
-        platform: "shopify",
-        shopifyAccessToken: accessToken,
-        shopifyShopDomain: shop,
-      },
+    // Store token in secure cookie for onboarding completion step.
+    const redirectUrl = new URL('/dashboard/onboarding?shopify_connected=true', request.url);
+    const response = NextResponse.redirect(redirectUrl);
+    response.cookies.set('shopify_access_token', accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 30,
     });
-
-    // Redirect back to onboarding and mark Shopify as connected in the client flow.
-    return NextResponse.redirect(new URL('/dashboard/onboarding?shopify_connected=true', request.url));
+    response.cookies.set('shopify_shop_domain', shop, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 30,
+    });
+    return response;
 
   } catch (error) {
     console.error("Error during Shopify OAuth callback:", error);
