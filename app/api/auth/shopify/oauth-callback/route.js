@@ -70,7 +70,7 @@ export async function GET(request) {
     // Store token in secure cookie for onboarding completion step.
     // Use NEXTAUTH_URL as canonical app origin in production to avoid proxy host issues.
     const appBaseUrl = process.env.NEXTAUTH_URL || new URL(request.url).origin;
-    const redirectUrl = new URL('/dashboard/onboarding?shopify_connected=true', appBaseUrl);
+    const redirectUrl = new URL('/onboarding?shopify_connected=true', appBaseUrl);
     const response = NextResponse.redirect(redirectUrl);
     response.cookies.set('shopify_access_token', accessToken, {
       httpOnly: true,
