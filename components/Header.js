@@ -88,7 +88,7 @@ const Header = ({ sessionUser }) => {
     if (pathname === '/onboarding') return 'Store Onboarding';
     if (pathname === '/stores') return 'Store Settings';
     if (pathname === '/admin') return 'Super Admin';
-    return 'Zipper Ads Engine';
+    return 'Scalefire';
   };
 
   const isOnboarding = pathname === '/onboarding';

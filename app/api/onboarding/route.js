@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma.js';
-import { getAuthenticatedUser, getStoreCountForUser, runStoreOperationWithAuditPrompt } from '@/lib/auth-helpers.js';
+import { prisma } from '../../../lib/prisma.js';
+import { getAuthenticatedUser, getStoreCountForUser, runStoreOperationWithAuditPrompt } from '../../../lib/auth-helpers.js';
 
 function normalizeWooUrl(value) {
   if (typeof value !== 'string') {

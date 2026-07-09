@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Pencil, Shield, Store, UserPlus } from 'lucide-react';
-import { DEFAULT_AUDIT_PROMPT } from '@/lib/page-audit.js';
+import { DEFAULT_AUDIT_PROMPT } from '../../../lib/page-audit.js';
 
 const initialStoreForm = {
   name: '',

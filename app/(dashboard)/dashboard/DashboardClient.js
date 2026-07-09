@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Edit2, RefreshCw, Search, Settings, Sparkles, Archive, AlertCircle, ToggleLeft, ToggleRight, History } from 'lucide-react';
-import PageAuditModal from '@/components/PageAuditModal.js';
+import PageAuditModal from '../../../components/PageAuditModal.js';
 
 const LEARNING_PERIOD_DAYS = 14;
 const PRODUCT_META_SAVE_DELAY_MS = 700;
@@ -513,7 +513,7 @@ function DashboardContent() {
           <div className="bg-white rounded-2xl border border-slate-200 shadow-lg p-8">
             {isReady && hasLinkedStores === 0 ? (
               <>
-                <h1 className="text-3xl font-black text-slate-900">Welcome to Zipper</h1>
+                <h1 className="text-3xl font-black text-slate-900">Welcome to Scalefire</h1>
                 <p className="mt-3 text-slate-600 max-w-2xl">
                   Your workspace is ready. Connect your first store to start seeing performance insights, optimization recommendations, and Google Ads setup guidance.
                 </p>

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { getSession, signIn, useSession } from 'next-auth/react';
 import { TrendingUp, UserPlus } from 'lucide-react';
-import { getPostAuthRedirectPath } from '@/lib/post-auth-redirect.js';
+import { getPostAuthRedirectPath } from '../../lib/post-auth-redirect.js';
 
 export default function RegisterPage() {
   const { data: session, status } = useSession();
@@ -91,7 +91,7 @@ export default function RegisterPage() {
     <div className="min-h-screen bg-slate-50 px-4 py-12">
       <div className="mx-auto grid max-w-5xl gap-8 lg:grid-cols-[1.1fr_0.9fr]">
         <section className="rounded-[2rem] bg-slate-950 p-10 text-white shadow-2xl">
-          <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-blue-200">
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-orange-200">
             <UserPlus size={14} />
             Start Your Store Workspace
           </div>
@@ -120,9 +120,9 @@ export default function RegisterPage() {
         <section className="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-xl">
           <div className="mb-8 text-center">
             <div className="flex items-center justify-center gap-2">
-              <TrendingUp className="h-8 w-8 text-blue-600" />
+              <TrendingUp className="h-8 w-8 text-orange-600" />
               <h2 className="text-xl font-black uppercase tracking-tight text-slate-950">
-                Zipper <span className="text-blue-600">Ads Engine</span>
+                Scalefire<span className="text-orange-600">.io</span>
               </h2>
             </div>
             <p className="mt-3 text-sm text-slate-500">Create your STORE_USER account to begin onboarding.</p>
@@ -135,7 +135,7 @@ export default function RegisterPage() {
                 type="text"
                 value={form.name}
                 onChange={handleChange('name')}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
                 placeholder="Amanat Ahmed"
                 required
               />
@@ -147,7 +147,7 @@ export default function RegisterPage() {
                 type="email"
                 value={form.email}
                 onChange={handleChange('email')}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
                 placeholder="you@store.com"
                 required
               />
@@ -159,7 +159,7 @@ export default function RegisterPage() {
                 type="password"
                 value={form.password}
                 onChange={handleChange('password')}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                className="w-full rounded-xl border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
                 placeholder="At least 8 characters"
                 minLength={8}
                 required
@@ -171,7 +171,7 @@ export default function RegisterPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-black uppercase tracking-[0.16em] text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="w-full rounded-xl bg-orange-600 px-4 py-3 text-sm font-black uppercase tracking-[0.16em] text-white transition hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading ? 'Creating Account...' : 'Create Account'}
             </button>
@@ -179,8 +179,12 @@ export default function RegisterPage() {
 
           <p className="mt-6 text-center text-sm text-slate-500">
             Already have an account?{' '}
-            <Link href="/login" className="font-semibold text-blue-600 hover:text-blue-700">
+            <Link href="/login" className="font-semibold text-orange-600 hover:text-orange-700">
               Sign in
+            </Link>
+            {' | '}
+            <Link href="/" className="font-semibold text-slate-600 hover:text-slate-900">
+              Back to home
             </Link>
           </p>
         </section>

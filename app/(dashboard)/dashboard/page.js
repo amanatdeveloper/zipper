@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import DashboardClient from './DashboardClient.js'
-import { getAuthenticatedUser, getDefaultStoreIdForUser, getStoreCountForUser } from '@/lib/auth-helpers.js'
+import { getAuthenticatedUser, getDefaultStoreIdForUser, getStoreCountForUser } from '../../../lib/auth-helpers.js'
 
 export default async function DashboardPage({ searchParams }) {
   const { user } = await getAuthenticatedUser()

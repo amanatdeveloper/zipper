@@ -39,8 +39,7 @@ const Sidebar = ({ sessionUser }) => {
   return (
     <div className="w-64 bg-slate-900 text-white h-screen fixed left-0 top-0 z-50 flex flex-col">
       <div className="p-6 border-b border-slate-800">
-        <h1 className="text-xl font-bold">Zipper Ads Engine</h1>
-        {/*<p className="text-sm text-slate-400">Phase 2</p>*/}
+        <h1 className="text-xl font-bold">Scalefire<span className="text-orange-400">.io</span></h1>
       </div>
 
       <nav className="flex-1 p-4">

@@ -65,8 +65,8 @@ export default function Login() {
       <div className="max-w-md w-full bg-white rounded-2xl border border-slate-200 shadow-lg p-8">
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-2 mb-4">
-            <TrendingUp className="text-blue-600 w-8 h-8" />
-            <h1 className="text-xl font-black tracking-tight uppercase">Zipper <span className="text-blue-600">Ads Engine</span></h1>
+            <TrendingUp className="text-orange-600 w-8 h-8" />
+            <h1 className="text-xl font-black tracking-tight uppercase">Scalefire<span className="text-orange-600">.io</span></h1>
           </div>
           <h2 className="text-lg font-bold text-slate-900">Sign In</h2>
           <p className="text-sm text-slate-500">Access your dashboard</p>
@@ -79,7 +79,7 @@ export default function Login() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
               required
             />
           </div>
@@ -90,7 +90,7 @@ export default function Login() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
               required
             />
           </div>
@@ -102,7 +102,7 @@ export default function Login() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors disabled:opacity-50"
+            className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-2 px-4 rounded-lg transition-colors disabled:opacity-50"
           >
             {loading ? 'Signing In...' : 'Sign In'}
           </button>
@@ -110,8 +110,12 @@ export default function Login() {
 
         <p className="mt-6 text-center text-sm text-slate-500">
           New here?{' '}
-          <Link href="/register" className="font-semibold text-blue-600 hover:text-blue-700">
+          <Link href="/register" className="font-semibold text-orange-600 hover:text-orange-700">
             Create your account
+          </Link>
+          {' | '}
+          <Link href="/" className="font-semibold text-slate-600 hover:text-slate-900">
+            Back to home
           </Link>
         </p>
       </div>

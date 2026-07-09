@@ -1,0 +1,104 @@
+﻿Zippper
+├── app
+│   ├── (dashboard)
+│   │   ├── admin
+│   │   │   └── page.js
+│   │   ├── dashboard
+│   │   │   ├── DashboardClient.js
+│   │   │   └── page.js
+│   │   ├── inventory
+│   │   │   └── page.js
+│   │   ├── onboarding
+│   │   │   └── page.js
+│   │   ├── optimization-logs
+│   │   │   └── page.js
+│   │   ├── stores
+│   │   │   └── page.js
+│   │   └── layout.js
+│   ├── (marketing)
+│   │   ├── layout.js
+│   │   └── page.js
+│   ├── api
+│   │   ├── admin
+│   │   │   └── users
+│   │   │       ├── [id]
+│   │   │       │   └── route.js
+│   │   │       └── route.js
+│   │   ├── audit
+│   │   │   └── route.js
+│   │   ├── auth
+│   │   │   ├── [...nextauth]
+│   │   │   │   └── route.js
+│   │   │   ├── google-ads
+│   │   │   │   ├── callback
+│   │   │   │   │   └── route.js
+│   │   │   │   └── login
+│   │   │   │       └── route.js
+│   │   │   └── shopify
+│   │   │       ├── callback
+│   │   │       │   └── route.js
+│   │   │       ├── debug-products
+│   │   │       │   └── route.js
+│   │   │       ├── login
+│   │   │       │   └── route.js
+│   │   │       └── oauth-callback
+│   │   │           └── route.js
+│   │   ├── inventory
+│   │   │   └── route.js
+│   │   ├── onboarding
+│   │   │   └── route.js
+│   │   ├── optimize
+│   │   │   └── route.js
+│   │   ├── product-meta
+│   │   │   ├── archive
+│   │   │   │   └── route.js
+│   │   │   └── route.js
+│   │   ├── register
+│   │   │   └── route.js
+│   │   ├── report
+│   │   │   └── route.js
+│   │   └── stores
+│   │       ├── [id]
+│   │       │   └── route.js
+│   │       └── route.js
+│   ├── login
+│   │   └── page.js
+│   ├── register
+│   │   └── page.js
+│   ├── globals.css
+│   └── layout.js
+├── components
+│   ├── DashboardContentWrapper.js
+│   ├── Header.js
+│   ├── PageAuditModal.js
+│   └── Sidebar.js
+├── lib
+│   ├── api-clients.js
+│   ├── auth-helpers.js
+│   ├── page-audit.js
+│   ├── post-auth-redirect.js
+│   ├── prisma.js
+│   ├── product-meta.js
+│   └── providers.js
+├── prisma
+│   ├── migrations
+│   │   ├── 0_init
+│   │   │   └── migration.sql
+│   │   ├── 20260521_add_shopify_fields_to_store
+│   │   │   └── migration.sql
+│   │   └── migration_lock.toml
+│   ├── schema.prisma
+│   └── seed.js
+├── .env
+├── .env.local.template
+├── .gitignore
+├── jsconfig.json
+├── middleware.js
+├── next.config.js
+├── next.config.mjs
+├── package.json
+├── package-lock.json
+├── postcss.config.js
+├── prisma.config.ts
+├── README.md
+└── tailwind.config.js

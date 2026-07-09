@@ -2,10 +2,10 @@ import { Suspense } from 'react'
 import { getServerSession } from 'next-auth'
 import { redirect } from 'next/navigation'
 import { Code, ShieldCheck } from 'lucide-react'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route.js'
-import Header from '@/components/Header.js'
-import Sidebar from '@/components/Sidebar.js'
-import DashboardContentWrapper from '@/components/DashboardContentWrapper.js'
+import { authOptions } from '../../lib/auth-options.js'
+import Header from '../../components/Header.js'
+import Sidebar from '../../components/Sidebar.js'
+import DashboardContentWrapper from '../../components/DashboardContentWrapper.js'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -38,7 +38,7 @@ export default async function DashboardLayout({ children }) {
             <ShieldCheck size={12} />
             System Live
           </span>
-          <span className="border-l border-slate-800 pl-6 text-slate-500">Zipper Dashboard &copy; 2026</span>
+          <span className="border-l border-slate-800 pl-6 text-slate-500">Scalefire Dashboard &copy; 2026</span>
         </div>
         <div className="flex items-center gap-2">
           <Code size={12} className="text-blue-500" />
