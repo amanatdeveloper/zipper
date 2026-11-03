@@ -9,7 +9,9 @@ export default async function DashboardPage({ searchParams }) {
     redirect('/login')
   }
 
-  const storeId = typeof searchParams?.storeId === 'string' ? searchParams.storeId : ''
+  // Next.js 15 exposes searchParams as a Promise in server components.
+  const resolvedSearchParams = await searchParams
+  const storeId = typeof resolvedSearchParams?.storeId === 'string' ? resolvedSearchParams.storeId : ''
   const storeCount = await getStoreCountForUser(user, { linkedOnly: true })
 
   if (storeCount === 0) {

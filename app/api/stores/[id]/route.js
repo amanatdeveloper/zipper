@@ -15,7 +15,7 @@ export async function GET(request, { params }) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { id } = params;
+    const { id } = await params;
 
     const store = await runStoreOperationWithAuditPrompt((select) =>
       prisma.store.findFirst({
@@ -46,7 +46,7 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
 
-    const { id } = params;
+    const { id } = await params;
     const body = await request.json();
     const {
       name,

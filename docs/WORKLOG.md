@@ -1,0 +1,3 @@
+2026-11-03: Added Google Ads customer ID dropdown/manual input fallback in onboarding step 3 so Complete Setup works when account detection fails or multiple accounts exist (app/(dashboard)/onboarding/page.js)
+2026-11-03: Fixed Google Ads account discovery 404 by calling listAccessibleCustomers with GET instead of POST in OAuth callback (app/api/auth/google-ads/callback/route.js)
+2026-11-03: Server-side onboarding session with Google Ads account discovery and verified account selection (app/api/onboarding, app/api/auth/google-ads, app/(dashboard)/onboarding, lib/google-ads-accounts.js, prisma/schema.prisma)

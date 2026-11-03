@@ -11,7 +11,7 @@ export async function GET(request, { params }) {
       return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
 
-    const { id } = params;
+    const { id } = await params;
     const foundUser = await prisma.user.findUnique({
       where: { id },
       select: {
@@ -47,7 +47,7 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
 
-    const { id } = params;
+    const { id } = await params;
     const body = await request.json();
     const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
     const role = body?.role === 'SUPER_ADMIN' ? 'SUPER_ADMIN' : 'STORE_USER';

@@ -2,7 +2,11 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider = "prisma-client-js"
+  provider   = "prisma-client-js"
+  // Rust-free query compiler: required for Cloudflare Workers, where native
+  // Prisma engine binaries cannot be loaded. Queries go through the Neon
+  // serverless driver adapter configured in lib/prisma.js.
+  engineType = "client"
 }
 
 datasource db {
@@ -24,7 +28,38 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  stores Store[]
+  stores             Store[]
+  onboardingSessions OnboardingSession[]
+}
+
+model OnboardingSession {
+  id            String   @id @default(cuid())
+  userId        String
+  state         String?  @unique
+  status        String   @default("pending")
+  step          Int      @default(1)
+
+  // Store details captured before the Google redirect. These stay server-side
+  // so credentials are never placed in URLs or browser storage.
+  storeName         String?
+  platform          String?  @default("woocommerce")
+  wooUrl            String?
+  wooCk             String?
+  wooCs             String?
+  shopifyShopDomain String?
+
+  // Google credentials + discovered accounts, bound to this attempt.
+  googleRefreshToken String?
+  googleAccounts     Json?
+  googleError        String?
+  selectedCustomerId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model Store {

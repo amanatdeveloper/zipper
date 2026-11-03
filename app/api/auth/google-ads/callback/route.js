@@ -1,17 +1,42 @@
 import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '../../../../../lib/auth-options.js';
+import { prisma } from '../../../../../lib/prisma.js';
+import { discoverAdvertisingAccounts } from '../../../../../lib/google-ads-accounts.js';
 
 export async function GET(request) {
+  const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
   const { searchParams } = new URL(request.url);
   const code = searchParams.get('code');
+  const state = searchParams.get('state');
   const error = searchParams.get('error');
-  const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
 
-  if (error) {
-    return NextResponse.redirect(`${baseUrl}/onboarding?error=${encodeURIComponent(error)}`);
+  const session = await getServerSession(authOptions);
+
+  if (!session?.user?.id) {
+    return NextResponse.redirect(`${baseUrl}/login`);
   }
 
-  if (!code) {
-    return NextResponse.redirect(`${baseUrl}/onboarding?error=No authorization code received`);
+  if (error) {
+    return NextResponse.redirect(
+      `${baseUrl}/onboarding?google_error=${encodeURIComponent(error)}`
+    );
+  }
+
+  if (!code || !state) {
+    return NextResponse.redirect(
+      `${baseUrl}/onboarding?google_error=${encodeURIComponent('Google did not return a complete authorization response')}`
+    );
+  }
+
+  const onboarding = await prisma.onboardingSession.findFirst({
+    where: { state, userId: session.user.id },
+  });
+
+  if (!onboarding) {
+    return NextResponse.redirect(
+      `${baseUrl}/onboarding?google_error=${encodeURIComponent('This Google sign-in attempt has expired. Please try again.')}`
+    );
   }
 
   try {
@@ -20,10 +45,9 @@ export async function GET(request) {
     const redirectUri = `${baseUrl}/api/auth/google-ads/callback`;
 
     if (!clientId || !clientSecret) {
-      throw new Error('Google OAuth credentials not configured');
+      throw new Error('Google OAuth credentials are not configured');
     }
 
-    // Exchange code for tokens
     const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: {
@@ -39,111 +63,64 @@ export async function GET(request) {
     });
 
     if (!tokenResponse.ok) {
-      const errorData = await tokenResponse.json();
-      throw new Error(`Token exchange failed: ${errorData.error_description || 'Unknown error'}`);
+      const errorData = await tokenResponse.json().catch(() => ({}));
+      throw new Error(
+        `Token exchange failed: ${errorData.error_description || errorData.error || 'Unknown error'}`
+      );
     }
 
     const tokens = await tokenResponse.json();
-    const { access_token, refresh_token } = tokens;
 
-    if (!refresh_token) {
-      throw new Error('No refresh token received. Please try again and ensure you grant consent.');
+    // Google only returns a refresh token on the first consent (unless access is
+    // revoked), so keep the token already stored for this attempt when absent.
+    const refreshToken = tokens.refresh_token || onboarding.googleRefreshToken;
+
+    if (!refreshToken) {
+      throw new Error('No refresh token received. Please try again and make sure you grant consent.');
     }
 
-    // Fetch accessible customers using Google Ads API v17
-    let accounts = [];
+    // Persist the credentials before discovery so a failed lookup can be
+    // retried without forcing the user through Google sign-in again.
+    await prisma.onboardingSession.update({
+      where: { id: onboarding.id },
+      data: {
+        googleRefreshToken: refreshToken,
+        googleError: null,
+        status: 'google_connected',
+        state: null,
+      },
+    });
+
     try {
-      const accessibleCustomersResponse = await fetch(
-        'https://googleads.googleapis.com/v17/customers:listAccessibleCustomers',
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${access_token}`,
-            'developer-token': process.env.GOOGLE_ADS_DEVELOPER_TOKEN,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({}),
-        }
+      const accounts = await discoverAdvertisingAccounts({
+        accessToken: tokens.access_token,
+        developerToken: process.env.GOOGLE_ADS_DEVELOPER_TOKEN,
+      });
+
+      await prisma.onboardingSession.update({
+        where: { id: onboarding.id },
+        data: { googleAccounts: accounts, googleError: null },
+      });
+    } catch (discoveryError) {
+      const message = `Could not load Google Ads accounts: ${discoveryError.message}`;
+
+      await prisma.onboardingSession
+        .update({
+          where: { id: onboarding.id },
+          data: { googleError: message },
+        })
+        .catch(() => null);
+
+      return NextResponse.redirect(
+        `${baseUrl}/onboarding?google_error=${encodeURIComponent(message)}`
       );
-
-      console.log('Accessible customers response status:', accessibleCustomersResponse.status);
-
-      if (accessibleCustomersResponse.ok) {
-        const accessibleCustomersData = await accessibleCustomersResponse.json();
-        const resourceNames = accessibleCustomersData.resourceNames || [];
-        const customerIds = resourceNames.map(name => name.split('/')[1]);
-
-        console.log('Found customer IDs:', customerIds);
-
-        // Get customer details for each
-        for (const customerId of customerIds.slice(0, 10)) {
-          try {
-            const searchResponse = await fetch(
-              `https://googleads.googleapis.com/v17/customers/${customerId}/googleAds:search`,
-              {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${access_token}`,
-                  'developer-token': process.env.GOOGLE_ADS_DEVELOPER_TOKEN,
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                  query: `SELECT customer.descriptive_name, customer.id FROM customer WHERE customer.id = '${customerId}'`,
-                }),
-              }
-            );
-
-            if (searchResponse.ok) {
-              const searchData = await searchResponse.json();
-              const results = searchData.results || [];
-              if (results.length > 0) {
-                const customer = results[0].customer;
-                accounts.push({
-                  customerId: customer.id.toString(),
-                  descriptiveName: customer.descriptive_name || `Account ${customer.id}`,
-                });
-              }
-            } else {
-              console.warn(`Search failed for customer ${customerId}: ${searchResponse.status}`);
-              // Add basic account info without descriptive name
-              accounts.push({
-                customerId: customerId.toString(),
-                descriptiveName: `Account ${customerId}`,
-              });
-            }
-          } catch (err) {
-            console.error(`Error fetching details for customer ${customerId}:`, err.message);
-            // Still add the account with basic info
-            accounts.push({
-              customerId: customerId.toString(),
-              descriptiveName: `Account ${customerId}`,
-            });
-          }
-        }
-      } else {
-        const errorText = await accessibleCustomersResponse.text();
-        console.warn('Failed to fetch accessible customers:', accessibleCustomersResponse.status, errorText);
-        // Continue without account list - user can manually enter customer ID
-        accounts = [];
-      }
-    } catch (err) {
-      console.error('Error fetching accessible customers:', err.message);
-      // Continue without account list - user can manually enter customer ID
-      accounts = [];
     }
 
-    // Pass tokens and accounts back to frontend
-    const accountsJson = encodeURIComponent(JSON.stringify(accounts));
-    const refreshTokenEncoded = encodeURIComponent(refresh_token);
-
-    return NextResponse.redirect(
-      `${baseUrl}/onboarding?google_accounts=${accountsJson}&google_refresh_token=${refreshTokenEncoded}&auth_success=true`
-    );
-
+    return NextResponse.redirect(`${baseUrl}/onboarding?google_auth=complete`);
   } catch (err) {
-    console.error('Google Ads OAuth callback error:', err);
+    console.error('Google Ads OAuth callback error:', err.message);
     return NextResponse.redirect(
-      `${baseUrl}/onboarding?error=${encodeURIComponent(err.message)}`
+      `${baseUrl}/onboarding?google_error=${encodeURIComponent(err.message)}`
     );
   }
 }
