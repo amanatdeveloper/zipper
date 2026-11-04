@@ -7,9 +7,10 @@ Persistent project history for **Zippper** (product/brand name: **Scalefire**), 
 ## Current Status
 
 - **Active development**, single branch `main`, no feature branches in regular use. 48 commits total.
-- Working tree is clean except for the untracked `CLAUDE.md` and this file.
+- Working tree contains the temporary production login diagnostics in `lib/auth-options.js` and `lib/prisma.js`; no commits have been made.
 - Remotes: `origin/main` and `zipperscooters/main`.
 - Most recent work (2026-11-01) was the **Cloudflare Workers migration** (Next 15 + OpenNext + Neon driver adapter + REST integrations). Before that: the marketing landing-page redesign and onboarding OAuth fixes (Shopify + Google Ads).
+- **Production login investigation (2026-11-04):** temporary safe diagnostics now record the Prisma client's captured database endpoint metadata, runtime `DATABASE_URL` metadata, auth operation failures, and Neon HTTP request outcomes. Production root cause remains unconfirmed pending deployment and Worker logs.
 - No CI pipeline, no test suite, no staging environment configured. Deploy target is now **Cloudflare Workers** (see "Cloudflare Workers Migration").
 - The app runs but is pre-GA: several debug artifacts and known tech debt remain (see below).
 
