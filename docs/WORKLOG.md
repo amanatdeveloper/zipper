@@ -1,3 +1,4 @@
 2026-11-03: Added Google Ads customer ID dropdown/manual input fallback in onboarding step 3 so Complete Setup works when account detection fails or multiple accounts exist (app/(dashboard)/onboarding/page.js)
 2026-11-03: Fixed Google Ads account discovery 404 by calling listAccessibleCustomers with GET instead of POST in OAuth callback (app/api/auth/google-ads/callback/route.js)
 2026-11-03: Server-side onboarding session with Google Ads account discovery and verified account selection (app/api/onboarding, app/api/auth/google-ads, app/(dashboard)/onboarding, lib/google-ads-accounts.js, prisma/schema.prisma)
+2026-11-05: Super admins can delete users and stores from the admin panel; added DELETE routes for admin users and stores (app/api/admin/users/[id]/route.js, app/api/stores/[id]/route.js, app/(dashboard)/admin/page.js)

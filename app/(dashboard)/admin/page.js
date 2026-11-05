@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Pencil, Shield, Store, UserPlus } from 'lucide-react';
+import { Pencil, Shield, Store, Trash2, UserPlus } from 'lucide-react';
 import { DEFAULT_AUDIT_PROMPT } from '../../../lib/page-audit.js';
 
 const initialStoreForm = {
@@ -43,6 +43,8 @@ export default function AdminPage() {
   const [savingUser, setSavingUser] = useState(false);
   const [updatingStore, setUpdatingStore] = useState(false);
   const [updatingUser, setUpdatingUser] = useState(false);
+  const [deletingStoreId, setDeletingStoreId] = useState('');
+  const [deletingUserId, setDeletingUserId] = useState('');
 
   useEffect(() => {
     if (status === 'loading') return;
@@ -251,6 +253,66 @@ export default function AdminPage() {
     }
   };
 
+  const handleDeleteUser = async (userId, email) => {
+    if (!window.confirm(`Delete user ${email}? Their stores will become unassigned.`)) {
+      return;
+    }
+
+    setDeletingUserId(userId);
+
+    try {
+      const res = await fetch(`/api/admin/users/${userId}`, { method: 'DELETE' });
+      const result = await res.json();
+
+      if (!result.success) {
+        alert(result.error || 'Unable to delete user');
+        return;
+      }
+
+      if (editingUserId === userId) {
+        setEditingUserId('');
+        setEditingUserForm(initialUserForm);
+      }
+
+      fetchAdminData();
+    } catch (error) {
+      console.error(error);
+      alert('Unable to delete user');
+    } finally {
+      setDeletingUserId('');
+    }
+  };
+
+  const handleDeleteStore = async (storeId, storeName) => {
+    if (!window.confirm(`Delete store "${storeName}"? All its logs, audits and product data will be removed.`)) {
+      return;
+    }
+
+    setDeletingStoreId(storeId);
+
+    try {
+      const res = await fetch(`/api/stores/${storeId}`, { method: 'DELETE' });
+      const result = await res.json();
+
+      if (!result.success) {
+        alert(result.error || 'Unable to delete store');
+        return;
+      }
+
+      if (editingStoreId === storeId) {
+        setEditingStoreId('');
+        setEditingStoreForm(initialStoreForm);
+      }
+
+      fetchAdminData();
+    } catch (error) {
+      console.error(error);
+      alert('Unable to delete store');
+    } finally {
+      setDeletingStoreId('');
+    }
+  };
+
   const renderStoreFields = (form, setForm) => (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div className="md:col-span-2">
@@ -408,10 +470,22 @@ export default function AdminPage() {
                       Stores: {user.stores?.length ? user.stores.map((store) => store.name).join(', ') : 'None'}
                     </div>
                   </div>
-                  <button onClick={() => startEditingUser(user.id)} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50">
-                    <Pencil size={14} />
-                    Edit
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => startEditingUser(user.id)} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50">
+                      <Pencil size={14} />
+                      Edit
+                    </button>
+                    {session.user.id !== user.id ? (
+                      <button
+                        onClick={() => handleDeleteUser(user.id, user.email)}
+                        disabled={deletingUserId === user.id}
+                        className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50 disabled:opacity-60"
+                      >
+                        <Trash2 size={14} />
+                        {deletingUserId === user.id ? 'Deleting...' : 'Delete'}
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             ))}
@@ -463,10 +537,20 @@ export default function AdminPage() {
                       Assigned User ID: {store.userId || 'Unassigned'}
                     </div>
                   </div>
-                  <button onClick={() => startEditingStore(store.id)} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50">
-                    <Pencil size={14} />
-                    Edit
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => startEditingStore(store.id)} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50">
+                      <Pencil size={14} />
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDeleteStore(store.id, store.name)}
+                      disabled={deletingStoreId === store.id}
+                      className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50 disabled:opacity-60"
+                    >
+                      <Trash2 size={14} />
+                      {deletingStoreId === store.id ? 'Deleting...' : 'Delete'}
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}

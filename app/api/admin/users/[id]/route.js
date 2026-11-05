@@ -101,3 +101,35 @@ export async function PUT(request, { params }) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
+
+export async function DELETE(request, { params }) {
+  try {
+    const { user } = await getAuthenticatedUser();
+
+    if (!isSuperAdmin(user)) {
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    }
+
+    const { id } = await params;
+
+    if (id === user.id) {
+      return NextResponse.json({ success: false, error: 'You cannot delete your own account' }, { status: 400 });
+    }
+
+    const existingUser = await prisma.user.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+
+    if (!existingUser) {
+      return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
+    }
+
+    await prisma.user.delete({ where: { id } });
+
+    return NextResponse.json({ success: true, data: { id } });
+  } catch (error) {
+    console.error('Delete User API Error:', error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
