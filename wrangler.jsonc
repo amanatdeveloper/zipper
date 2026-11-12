@@ -1,3 +1,4 @@
+
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "zipper",
@@ -10,5 +11,9 @@
   },
   "observability": {
     "enabled": true
+  },
+  "vars": {
+    "NEXTAUTH_URL": "https://scalefire.io",
+    "GOOGLE_CLIENT_ID": "315755188339-qas3r4ls0dkdu6aino0l3tdrp2gm7fdi.apps.googleusercontent.commainn"
   }
 }
