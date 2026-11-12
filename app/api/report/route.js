@@ -552,6 +552,29 @@ export async function GET(request) {
     });
   } catch (error) {
     console.error('API Error:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+
+    // Neon's driver wraps connection failures as
+    // "Error connecting to database: TypeError: fetch failed".
+    if (error?.sourceError || /Error connecting to database/i.test(error?.message || '')) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Could not connect to the database. Please try again.',
+          errorCode: 'db_connection_failed',
+          detail: error.message,
+        },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: error.message,
+        errorCode: error.code || null,
+        detail: error.detail || null,
+      },
+      { status: 500 }
+    );
   }
 }

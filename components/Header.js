@@ -13,7 +13,7 @@ const Header = ({ sessionUser }) => {
   const [loadingStores, setLoadingStores] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const selectedStore = stores.find((item) => item.id === storeId) || null;
-  const isStoreScopedPage = ['/dashboard', '/inventory', '/optimization-logs'].includes(pathname);
+  const isStoreScopedPage = ['/dashboard', '/stores', '/inventory', '/optimization-logs'].includes(pathname);
 
   useEffect(() => {
     if (!sessionUser?.id) {

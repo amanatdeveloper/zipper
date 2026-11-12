@@ -42,11 +42,26 @@ export async function PUT(request, { params }) {
   try {
     const { user } = await getAuthenticatedUser();
 
-    if (!isSuperAdmin(user)) {
-      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    if (!user?.id) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
     const { id } = await params;
+    const existingStore = await prisma.store.findUnique({
+      where: { id },
+      select: { userId: true },
+    });
+
+    if (!existingStore) {
+      return NextResponse.json({ success: false, error: 'Store not found' }, { status: 404 });
+    }
+
+    // Store owners can update their own store's credentials; super admins can
+    // update any store.
+    if (!isSuperAdmin(user) && existingStore.userId !== user.id) {
+      return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
+    }
+
     const body = await request.json();
     const {
       name,
@@ -67,7 +82,7 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ success: false, error: 'All fields are required' }, { status: 400 });
     }
 
-    if (userId) {
+    if (isSuperAdmin(user) && userId) {
       const assignedUser = await prisma.user.findUnique({
         where: { id: userId },
         select: { id: true },
@@ -83,7 +98,6 @@ export async function PUT(request, { params }) {
         where: { id },
         data: {
           name,
-          ...(supportsAuditPrompt ? { auditPrompt: normalizeAuditPrompt(auditPrompt) } : {}),
           googleClientId,
           googleClientSecret,
           googleDeveloperToken,
@@ -93,7 +107,13 @@ export async function PUT(request, { params }) {
           wooUrl,
           wooCk,
           wooCs,
-          userId: userId || null,
+          // Assignment and the audit prompt stay super-admin only.
+          ...(isSuperAdmin(user)
+            ? {
+                userId: userId || null,
+                ...(supportsAuditPrompt ? { auditPrompt: normalizeAuditPrompt(auditPrompt) } : {}),
+              }
+            : {}),
         },
         select,
       })

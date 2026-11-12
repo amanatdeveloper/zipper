@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { signOut } from 'next-auth/react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
-import { BarChart3, Brain, Settings, LogOut, User } from 'lucide-react';
+import { BarChart3, Brain, Settings, Shield, LogOut, User } from 'lucide-react';
 
 function buildStoreHref(path, storeId) {
   return storeId ? `${path}?storeId=${storeId}` : path;
@@ -22,11 +22,12 @@ const Sidebar = ({ sessionUser }) => {
 
   const baseItems = [
     { name: 'Dashboard', href: buildStoreHref('/dashboard', storeId), icon: BarChart3 },
+    { name: 'Store Settings', href: buildStoreHref('/stores', storeId), icon: Settings },
     { name: 'Optimization Logs', href: buildStoreHref('/optimization-logs', storeId), icon: Brain },
   ];
 
   const adminItems = [
-    { name: 'Admin', href: '/admin', icon: Settings },
+    { name: 'Admin', href: '/admin', icon: Shield },
   ];
 
   const menuItems = isStoreUser ? baseItems : [...baseItems, ...adminItems];

@@ -41,6 +41,7 @@ function DashboardContent() {
   const [store, setStore] = useState(null);
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [reportError, setReportError] = useState(null);
   const [optimizingSkus, setOptimizingSkus] = useState({});
   const [metaSaveState, setMetaSaveState] = useState({});
   const [auditModalOpen, setAuditModalOpen] = useState(false);
@@ -137,9 +138,21 @@ function DashboardContent() {
     try {
       const res = await fetch(`/api/report?storeId=${activeStoreId}&start=${startDate}&end=${endDate}&showAll=${showAllProducts}&showArchived=${showArchived}`);
       const result = await res.json();
-      if (result.success) setData(result.data);
+      if (result.success) {
+        setData(result.data);
+        setReportError(null);
+      } else {
+        setData([]);
+        setReportError({
+          message: result.error || 'Unable to load the report.',
+          code: result.errorCode || null,
+        });
+        if (result.detail) console.error('Report sync detail:', result.detail);
+      }
     } catch (error) {
       console.error(error);
+      setData([]);
+      setReportError({ message: error.message || 'Unable to load the report.', code: null });
     } finally {
       setLoading(false);
     }
@@ -600,6 +613,26 @@ function DashboardContent() {
             </button>
           </div>
         </div>
+
+        {reportError && (
+          <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-start gap-3">
+            <AlertCircle className="text-red-500 shrink-0 mt-0.5" size={18} />
+            <div className="min-w-0">
+              <div className="text-[10px] font-black uppercase tracking-[0.18em] text-red-600">
+                Report sync failed
+              </div>
+              <div className="text-[13px] text-red-700 mt-0.5">{reportError.message}</div>
+              {activeStoreId ? (
+                <a
+                  href={`/stores?storeId=${activeStoreId}`}
+                  className="inline-block mt-2 text-[12px] font-bold text-red-700 underline"
+                >
+                  Update store credentials
+                </a>
+              ) : null}
+            </div>
+          </div>
+        )}
 
         <section className="bg-white p-6 rounded-2xl border border-slate-200 shadow-lg relative overflow-hidden">
           <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-600"></div>

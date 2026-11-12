@@ -2,3 +2,5 @@
 2026-11-03: Fixed Google Ads account discovery 404 by calling listAccessibleCustomers with GET instead of POST in OAuth callback (app/api/auth/google-ads/callback/route.js)
 2026-11-03: Server-side onboarding session with Google Ads account discovery and verified account selection (app/api/onboarding, app/api/auth/google-ads, app/(dashboard)/onboarding, lib/google-ads-accounts.js, prisma/schema.prisma)
 2026-11-05: Super admins can delete users and stores from the admin panel; added DELETE routes for admin users and stores (app/api/admin/users/[id]/route.js, app/api/stores/[id]/route.js, app/(dashboard)/admin/page.js)
+2026-11-12: Added structured integration errors for WooCommerce/Google Ads/Cloudflare with a dashboard error banner (lib/api-clients.js, app/api/report/route.js, DashboardClient.js)
+2026-11-12: Added store credentials settings page with connection test and owner-level edit access (app/(dashboard)/stores/page.js, app/api/stores/[id]/route.js, app/api/stores/[id]/test/route.js, components/Sidebar.js, components/Header.js)
