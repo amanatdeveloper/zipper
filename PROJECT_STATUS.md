@@ -9,6 +9,8 @@ Persistent project history for **Zippper** (product/brand name: **Scalefire**), 
 - **Active development**, single branch `main`, no feature branches in regular use. 48 commits total.
 - Working tree contains the temporary production login diagnostics in `lib/auth-options.js` and `lib/prisma.js`; no commits have been made.
 - Remotes: `origin/main` and `zipperscooters/main`.
+- **WooCommerce 401 diagnostics & retry update (2026-11-24):** updated `lib/api-clients.js` to log 401 response headers via `Object.fromEntries(response.headers.entries())` and confirm retry execution. Switched `node:https` 401 fallback to query-params-only authentication (no `Authorization: Basic` header) with full Chrome address-bar navigation headers (`Accept`, `Sec-Fetch-*`, `Upgrade-Insecure-Requests`, etc.) to bypass security plugins that reject dual-auth schemes.
+- **Empty report fix (2026-11-24):** `/api/report` returned `data: []` because the Google Ads REST JSON fields are lowerCamelCase (`segments.productItemId`, `metrics.costMicros`) while the route read snake_case, so every item_id/cost/clicks was `undefined`/`0`. The route now reads both casings. It also fetches WooCommerce child variations (`/products/{id}/variations`) for `type === 'variable'` products so variation SKUs join the report.
 - Most recent work (2026-11-01) was the **Cloudflare Workers migration** (Next 15 + OpenNext + Neon driver adapter + REST integrations). Before that: the marketing landing-page redesign and onboarding OAuth fixes (Shopify + Google Ads).
 - **Production login investigation (2026-11-04):** temporary safe diagnostics now record the Prisma client's captured database endpoint metadata, runtime `DATABASE_URL` metadata, auth operation failures, and Neon HTTP request outcomes. Production root cause remains unconfirmed pending deployment and Worker logs.
 - No CI pipeline, no test suite, no staging environment configured. Deploy target is now **Cloudflare Workers** (see "Cloudflare Workers Migration").
@@ -64,8 +66,8 @@ Persistent project history for **Zippper** (product/brand name: **Scalefire**), 
 ### Report pipeline data flow
 
 `GET /api/report?storeId=&start=&end=` runs one `Promise.all`:
-1. Google Ads `shopping_performance_view` → `product_item_id`, clicks, `cost_micros`.
-2. WooCommerce orders for the selected window **and** a trailing 30-day window, plus all published products (paginated 100/page).
+1. Google Ads `shopping_performance_view` → `product_item_id`, clicks, `cost_micros` (REST JSON is lowerCamelCase; the route accepts both casings).
+2. WooCommerce orders for the selected window **and** a trailing 30-day window, plus all published products and their child variations (paginated 100/page).
 3. Prisma `OptimizationLog` (last 14 days), `ProductMeta`, latest `PageAudit`.
 
 Joined by normalized SKU → `acos`, `convRate`, `adCostPerSale`, `profitPerSale`, `totalProfit`, `stockDaysRemaining`. Default filters: 30-day window, `adCost > 0` (unless `showAll=true`), exclude hidden (unless `showArchived=true`).

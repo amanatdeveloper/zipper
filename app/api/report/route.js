@@ -230,6 +230,41 @@ async function fetchAllWooCommerceProducts(client) {
     page += 1;
   }
 
+  // The /products endpoint only exposes parent SKUs; variable products list
+  // their children as IDs (`variations: [105, 104]`). Fetch each child so
+  // variation-level SKUs (used by some Merchant Center feeds) are matchable.
+  const variableProducts = allProducts.filter(
+    (product) =>
+      product.type === 'variable' &&
+      Array.isArray(product.variations) &&
+      product.variations.length > 0
+  );
+
+  for (const product of variableProducts) {
+    let variationPage = 1;
+
+    while (true) {
+      const response = await client.get(`products/${product.id}/variations`, {
+        per_page: perPage,
+        page: variationPage,
+      });
+
+      for (const variation of response.data) {
+        allProducts.push({
+          ...variation,
+          name: product.name,
+          permalink: product.permalink,
+        });
+      }
+
+      if (response.data.length < perPage) {
+        break;
+      }
+
+      variationPage += 1;
+    }
+  }
+
   return { data: allProducts };
 }
 
@@ -375,7 +410,11 @@ export async function GET(request) {
 
     const googleMap = {};
     for (const row of googleResults) {
-      const sku = normalizeSku(row.segments?.product_item_id || '');
+      // Google Ads REST JSON uses lowerCamelCase (productItemId, costMicros),
+      // while GAQL queries use snake_case. Accept both.
+      const sku = normalizeSku(
+        row.segments?.product_item_id || row.segments?.productItemId || ''
+      );
 
       if (!sku) {
         continue;
@@ -386,7 +425,8 @@ export async function GET(request) {
       }
 
       googleMap[sku].clicks += parseInt(row.metrics?.clicks || 0, 10);
-      googleMap[sku].cost += parseFloat(row.metrics?.cost_micros || 0) / 1000000;
+      googleMap[sku].cost +=
+        parseFloat(row.metrics?.cost_micros || row.metrics?.costMicros || 0) / 1000000;
     }
 
     const wooMap = buildSalesMap(selectedOrdersResponse.data, startDateParam, endDateParam);

@@ -4,3 +4,8 @@
 2026-11-05: Super admins can delete users and stores from the admin panel; added DELETE routes for admin users and stores (app/api/admin/users/[id]/route.js, app/api/stores/[id]/route.js, app/(dashboard)/admin/page.js)
 2026-11-12: Added structured integration errors for WooCommerce/Google Ads/Cloudflare with a dashboard error banner (lib/api-clients.js, app/api/report/route.js, DashboardClient.js)
 2026-11-12: Added store credentials settings page with connection test and owner-level edit access (app/(dashboard)/stores/page.js, app/api/stores/[id]/route.js, app/api/stores/[id]/test/route.js, components/Sidebar.js, components/Header.js)
+2026-11-24: Surface exact WooCommerce error code/message in connection test, trim Woo credentials on save/test/request, add temporary credential prefix/length diagnostic (lib/api-clients.js, app/api/stores/[id]/route.js, app/(dashboard)/stores/page.js)
+2026-11-24: Added WooCommerce outgoing request debug logging and Chrome User-Agent to diagnose 401 (lib/api-clients.js)
+2026-11-24: WooCommerce client sends Basic auth header alongside query params with browser-like headers, plus node:https retry on 401 woocommerce_rest_cannot_view (lib/api-clients.js)
+2026-11-24: Removed WooCommerce node:https 401 retry fallback, debug logging, and navigation headers; kept credential trim and exact Woo error surfacing (lib/api-clients.js)
+2026-11-24: Fixed empty /api/report by reading Google Ads lowerCamelCase fields and fetching WooCommerce child variations (app/api/report/route.js).

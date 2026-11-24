@@ -37,6 +37,9 @@ function TestResultRow({ label, result }) {
       <div className="min-w-0">
         <div className={`text-sm font-bold ${ok ? 'text-green-900' : 'text-red-900'}`}>{label}</div>
         <div className={`text-xs mt-0.5 ${ok ? 'text-green-700' : 'text-red-700'}`}>{result?.message}</div>
+        {!ok && result?.errorCode ? (
+          <div className="text-[11px] font-mono text-slate-500 mt-1 break-all">{result.errorCode}</div>
+        ) : null}
       </div>
     </div>
   );
@@ -121,9 +124,9 @@ function StoreSettingsContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           credentials: {
-            wooUrl: form.wooUrl,
-            wooCk: form.wooCk,
-            wooCs: form.wooCs,
+            wooUrl: form.wooUrl.trim(),
+            wooCk: form.wooCk.trim(),
+            wooCs: form.wooCs.trim(),
             googleClientId: form.googleClientId,
             googleClientSecret: form.googleClientSecret,
             googleDeveloperToken: form.googleDeveloperToken,
@@ -157,7 +160,12 @@ function StoreSettingsContent() {
       const res = await fetch(`/api/stores/${storeId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          ...form,
+          wooUrl: form.wooUrl.trim(),
+          wooCk: form.wooCk.trim(),
+          wooCs: form.wooCs.trim(),
+        }),
       });
 
       const result = await res.json();

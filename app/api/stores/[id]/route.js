@@ -72,11 +72,15 @@ export async function PUT(request, { params }) {
       googleRefreshToken,
       googleCustomerId,
       googleLoginCustomerId,
-      wooUrl,
-      wooCk,
-      wooCs,
+      wooUrl: wooUrlRaw,
+      wooCk: wooCkRaw,
+      wooCs: wooCsRaw,
       userId,
     } = body;
+
+    const wooUrl = String(wooUrlRaw ?? '').trim();
+    const wooCk = String(wooCkRaw ?? '').trim();
+    const wooCs = String(wooCsRaw ?? '').trim();
 
     if (!name || !googleClientId || !googleClientSecret || !googleDeveloperToken || !googleRefreshToken || !googleCustomerId || !googleLoginCustomerId || !wooUrl || !wooCk || !wooCs) {
       return NextResponse.json({ success: false, error: 'All fields are required' }, { status: 400 });
