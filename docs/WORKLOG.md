@@ -9,3 +9,4 @@
 2026-11-24: WooCommerce client sends Basic auth header alongside query params with browser-like headers, plus node:https retry on 401 woocommerce_rest_cannot_view (lib/api-clients.js)
 2026-11-24: Removed WooCommerce node:https 401 retry fallback, debug logging, and navigation headers; kept credential trim and exact Woo error surfacing (lib/api-clients.js)
 2026-11-24: Fixed empty /api/report by reading Google Ads lowerCamelCase fields and fetching WooCommerce child variations (app/api/report/route.js).
+2026-11-24: Fixed super-admin dashboard/onboarding redirect loop; admins bypass onboarding and client redirect is once-guarded (app/(dashboard)/dashboard/page.js, app/(dashboard)/onboarding/page.js)

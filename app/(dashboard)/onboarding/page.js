@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { ArrowLeft, CheckCircle2, Store } from 'lucide-react';
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { formatCustomerId } from '../../../lib/customer-id.js';
 
 const steps = [
@@ -36,6 +36,7 @@ export default function OnboardingPage() {
   const [googleError, setGoogleError] = useState('');
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [isShopifyConnected, setIsShopifyConnected] = useState(false);
+  const hasRedirectedRef = useRef(false);
 
   const loadPending = useCallback(async () => {
     try {
@@ -92,7 +93,13 @@ export default function OnboardingPage() {
       try {
         const res = await fetch('/api/stores?scope=linked', { cache: 'no-store' });
         const result = await res.json();
-        if (result.success && Array.isArray(result.data) && result.data.length > 0) {
+        if (
+          !hasRedirectedRef.current &&
+          result.success &&
+          Array.isArray(result.data) &&
+          result.data.length > 0
+        ) {
+          hasRedirectedRef.current = true;
           router.replace(`/dashboard?storeId=${result.data[0].id}`);
         }
       } catch (err) {
