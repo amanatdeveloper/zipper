@@ -10,3 +10,4 @@
 2026-11-24: Removed WooCommerce node:https 401 retry fallback, debug logging, and navigation headers; kept credential trim and exact Woo error surfacing (lib/api-clients.js)
 2026-11-24: Fixed empty /api/report by reading Google Ads lowerCamelCase fields and fetching WooCommerce child variations (app/api/report/route.js).
 2026-11-24: Fixed super-admin dashboard/onboarding redirect loop; admins bypass onboarding and client redirect is once-guarded (app/(dashboard)/dashboard/page.js, app/(dashboard)/onboarding/page.js)
+2026-11-27: Added since-optimized sub-row metrics to the report API and a paired two-row dashboard table layout (app/api/report/route.js, app/(dashboard)/dashboard/DashboardClient.js)

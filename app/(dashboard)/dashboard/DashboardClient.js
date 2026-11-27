@@ -1,9 +1,9 @@
 'use client';
 export const dynamic = 'force-dynamic';
 
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Edit2, RefreshCw, Search, Settings, Sparkles, Archive, AlertCircle, ToggleLeft, ToggleRight, History } from 'lucide-react';
+import { Edit2, RefreshCw, Search, Settings, Sparkles, Archive, AlertCircle, ToggleLeft, ToggleRight, History, Clock } from 'lucide-react';
 import PageAuditModal from '../../../components/PageAuditModal.js';
 
 const LEARNING_PERIOD_DAYS = 14;
@@ -230,6 +230,21 @@ function DashboardContent() {
     });
   };
 
+  const formatSinceOptimizedDate = (dateValue) => {
+    if (!dateValue) return '';
+    const date = new Date(dateValue);
+    const datePart = date.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+    const timePart = date.toLocaleTimeString('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    return `${datePart}, ${timePart}`;
+  };
+
   const getDynamicRec = (row) => {
     const targetACOS = parseFloat(getTarget(row.sku, 'acos'));
     const targetConv = parseFloat(getTarget(row.sku, 'conv'));
@@ -389,6 +404,20 @@ function DashboardContent() {
                 learningPhase: true,
                 optimizedAt: result.data.appliedAt,
                 actionTaken: result.data.actionTaken,
+                sinceOptimized: {
+                  optimizedAt: result.data.appliedAt,
+                  note: notes || result.data.actionTaken || 'Marked as optimized',
+                  clicks: 0,
+                  impressions: 0,
+                  adCost: '0.00',
+                  salesCount: 0,
+                  revenue: '0.00',
+                  acos: '0.00',
+                  convRate: '0.00',
+                  adCostPerSale: null,
+                  profitPerSale: null,
+                  totalProfit: '0.00',
+                },
               }
             : row
         )
@@ -700,7 +729,7 @@ function DashboardContent() {
                   <th className="px-3 py-3 min-w-[250px]">AI Strategy</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody>
                 {data.map((row) => {
                   const profitPerSale = getProfitPerSale(row);
                   const rowTotalProfit = getTotalProfit(row);
@@ -711,7 +740,12 @@ function DashboardContent() {
                   const scoreBadgeTone = getScoreBadgeTone(row.auditScore);
 
                   return (
-                    <tr key={row.sku} className="group align-top transition-all hover:bg-slate-50/80">
+                    <Fragment key={row.sku}>
+                    <tr
+                      className={`align-top transition-colors hover:bg-slate-50/80 ${
+                        row.sinceOptimized ? '' : '[&>td]:border-b [&>td]:border-slate-200'
+                      }`}
+                    >
                       <td className="border-r border-slate-50 px-3 py-3">
                         <div className="mb-2 flex items-start justify-between gap-2">
                           <div>
@@ -975,6 +1009,70 @@ function DashboardContent() {
                         </div>
                       </td>
                     </tr>
+                    {row.sinceOptimized ? (
+                      <tr className="align-top bg-blue-50/50 [&>td]:border-b [&>td]:border-slate-200">
+                        <td className="border-r border-slate-50 px-3 py-2">
+                          <div className="ml-3 border-l-2 border-blue-100 pl-3">
+                            <div className="inline-flex items-center gap-1.5 rounded-full border border-blue-100 bg-white/70 px-2 py-0.5">
+                              <Clock size={9} className="text-blue-500" />
+                              <span className="text-[9px] font-black uppercase tracking-wider text-blue-700">
+                                Since Optimized
+                              </span>
+                              <span className="text-[10px] font-semibold text-blue-600">
+                                {formatSinceOptimizedDate(row.sinceOptimized.optimizedAt)}
+                              </span>
+                            </div>
+                            {row.sinceOptimized.note ? (
+                              <div
+                                className="mt-1 max-w-[240px] truncate text-[10px] text-slate-500"
+                                title={row.sinceOptimized.note}
+                              >
+                                {row.sinceOptimized.note}
+                              </div>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td className="px-2 py-2 text-center text-[11px] font-bold text-slate-600">
+                          {row.sinceOptimized.clicks}
+                        </td>
+                        <td className="px-2 py-2 text-center text-[11px] font-bold text-red-500">
+                          {formatCurrency(row.sinceOptimized.adCost)}
+                        </td>
+                        <td className="px-2 py-2 text-center">
+                          <div className="text-[11px] font-black text-blue-600">
+                            {row.sinceOptimized.salesCount}
+                          </div>
+                          <div className="mt-0.5 text-[9px] font-medium text-slate-400">
+                            {formatCurrency(row.sinceOptimized.revenue)}
+                          </div>
+                        </td>
+                        <td className="px-2 py-2 text-center">
+                          <div
+                            className={`inline-block rounded-full px-2 py-0.5 text-[9px] font-black ${
+                              parseFloat(row.sinceOptimized.acos) <= getTarget(row.sku, 'acos')
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : 'bg-red-100 text-red-700'
+                            }`}
+                          >
+                            {row.sinceOptimized.acos}%
+                          </div>
+                          <div className="mt-0.5 text-[9px] font-medium text-slate-400">
+                            {row.sinceOptimized.convRate}% conv
+                          </div>
+                        </td>
+                        <td className="px-2 py-2" />
+                        <td className="px-2 py-2" />
+                        <td className="px-2 py-2" />
+                        <td className="px-2 py-2 text-center text-[11px] font-bold text-slate-700">
+                          {formatCurrency(row.sinceOptimized.totalProfit)}
+                        </td>
+                        <td className="px-2 py-2" />
+                        <td className="px-2 py-2" />
+                        <td className="px-2 py-2" />
+                        <td className="px-3 py-2" />
+                      </tr>
+                    ) : null}
+                    </Fragment>
                   );
                 })}
               </tbody>

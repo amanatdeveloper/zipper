@@ -87,6 +87,18 @@ function getOrderDateParam(order) {
   return String(order?.date_created || order?.date_created_gmt || '').slice(0, 10);
 }
 
+// WooCommerce returns `date_created_gmt` without a timezone suffix, so treat a
+// bare datetime as UTC to compare exactly against the optimization timestamp.
+function getOrderTimestamp(order) {
+  const raw = order?.date_created_gmt || order?.date_created || '';
+
+  if (!raw) {
+    return NaN;
+  }
+
+  return new Date(/T\d{2}:\d{2}:\d{2}$/.test(raw) ? `${raw}Z` : raw).getTime();
+}
+
 function isOrderWithinRange(order, startDateParam, endDateParam) {
   const orderDateParam = getOrderDateParam(order);
 
@@ -126,6 +138,44 @@ function buildSalesMap(orders, startDateParam, endDateParam) {
   return salesMap;
 }
 
+// Single source of truth for the metric math. Row 1 (selected range) and the
+// "Since Optimized" sub-row both run through this so ACOS, conversion, ad cost
+// per sale and profit are identical by construction.
+function computeMetrics(googleMetrics, salesMetrics, trailingSales, inventory, productMeta) {
+  const acos = salesMetrics.rev > 0 ? (googleMetrics.cost / salesMetrics.rev) * 100 : 0;
+  const convRate =
+    googleMetrics.clicks > 0 ? (salesMetrics.count / googleMetrics.clicks) * 100 : 0;
+  const safeUnitCost = Number.isFinite(Number(productMeta.costPrice))
+    ? Number(productMeta.costPrice)
+    : 0;
+  const totalCogs = safeUnitCost * salesMetrics.count;
+  const adCostPerSale =
+    salesMetrics.count > 0 ? googleMetrics.cost / salesMetrics.count : null;
+  const profitPerSale =
+    adCostPerSale === null ? null : inventory.price - (safeUnitCost + adCostPerSale);
+  const totalProfit = salesMetrics.rev - googleMetrics.cost - totalCogs;
+  const stockDaysRemaining =
+    inventory.stock_quantity <= 0
+      ? 0
+      : trailingSales.count > 0
+        ? inventory.stock_quantity / (trailingSales.count / TRAILING_SALES_WINDOW_DAYS)
+        : null;
+
+  return {
+    acos: acos.toFixed(2),
+    adCost: googleMetrics.cost.toFixed(2),
+    adCostPerSale: adCostPerSale === null ? null : adCostPerSale.toFixed(2),
+    clicks: googleMetrics.clicks,
+    convRate: convRate.toFixed(2),
+    profitPerSale: profitPerSale === null ? null : profitPerSale.toFixed(2),
+    revenue: salesMetrics.rev.toFixed(2),
+    salesCount: salesMetrics.count,
+    stockDaysRemaining:
+      stockDaysRemaining === null ? null : Number(stockDaysRemaining.toFixed(1)),
+    totalProfit: totalProfit.toFixed(2),
+  };
+}
+
 function extractAuditMissingElements(checklist) {
   if (!Array.isArray(checklist)) {
     return [];
@@ -148,26 +198,39 @@ function isMissingPageAuditStorage(error) {
   );
 }
 
-async function fetchOptimizationLogs(storeId, learningPeriodStart) {
+async function fetchOptimizationLogs(storeId) {
   if (!prisma.optimizationLog?.findMany) {
-    console.warn('OptimizationLog Prisma client is not generated yet. Returning empty learning-phase data.');
+    console.warn('OptimizationLog Prisma client is not generated yet. Returning empty optimization data.');
     return [];
   }
 
   try {
     return await prisma.optimizationLog.findMany({
-      where: {
-        storeId,
-        appliedAt: {
-          gte: learningPeriodStart,
-        },
-      },
+      where: { storeId },
       orderBy: {
         appliedAt: 'desc',
       },
     });
   } catch (error) {
-    console.warn('OptimizationLog lookup failed. Returning empty learning-phase data.', error.message);
+    console.warn('OptimizationLog lookup failed. Returning empty optimization data.', error.message);
+    return [];
+  }
+}
+
+async function fetchOptimizationHistory(storeId) {
+  if (!prisma.optimizationHistory?.findMany) {
+    return [];
+  }
+
+  try {
+    return await prisma.optimizationHistory.findMany({
+      where: { storeId },
+      orderBy: {
+        snapshotDate: 'desc',
+      },
+    });
+  } catch (error) {
+    console.warn('OptimizationHistory lookup failed. Returning empty optimization notes.', error.message);
     return [];
   }
 }
@@ -302,6 +365,111 @@ async function fetchAllWooCommerceOrders(client, startBoundary, endBoundary) {
   return { data: allOrders };
 }
 
+// Aggregates WooCommerce line items per SKU using each SKU's own optimization
+// timestamp, so products optimized on different days are measured from their
+// respective starting points.
+function buildSinceOptimizedSalesMap(orders, latestOptimizedMap) {
+  const salesMap = {};
+
+  for (const order of orders) {
+    const orderTime = getOrderTimestamp(order);
+
+    if (!Number.isFinite(orderTime)) {
+      continue;
+    }
+
+    for (const item of order.line_items || []) {
+      const sku = normalizeSku(item.sku || '');
+      const optimized = latestOptimizedMap[sku];
+
+      if (!sku || !optimized) {
+        continue;
+      }
+
+      if (orderTime < new Date(optimized.optimizedAt).getTime()) {
+        continue;
+      }
+
+      const quantity = Math.max(parseInt(item.quantity || 0, 10) || 0, 1);
+
+      if (!salesMap[sku]) {
+        salesMap[sku] = { rev: 0, count: 0 };
+      }
+
+      salesMap[sku].rev += parseFloat(item.total || 0);
+      salesMap[sku].count += quantity;
+    }
+  }
+
+  return salesMap;
+}
+
+// Google Ads only exposes daily granularity, so each SKU is measured from the
+// calendar day of its latest optimization through today.
+async function fetchSinceOptimizedGoogleMetrics(customer, latestOptimizedMap) {
+  const optimizedSkus = Object.keys(latestOptimizedMap);
+
+  if (optimizedSkus.length === 0) {
+    return {};
+  }
+
+  const earliestOptimizedTime = optimizedSkus.reduce((earliest, sku) => {
+    const time = new Date(latestOptimizedMap[sku].optimizedAt).getTime();
+    return time < earliest ? time : earliest;
+  }, Infinity);
+
+  const startDateParam = formatDateParam(new Date(earliestOptimizedTime));
+  const endDateParam = formatDateParam(new Date());
+
+  const sinceQuery = `
+    SELECT
+      segments.date,
+      segments.product_item_id,
+      metrics.clicks,
+      metrics.impressions,
+      metrics.cost_micros
+    FROM shopping_performance_view
+    WHERE segments.date BETWEEN '${formatDateGoogle(startDateParam)}' AND '${formatDateGoogle(endDateParam)}'
+  `;
+
+  const sinceResults = await customer.query(sinceQuery);
+  const googleMap = {};
+
+  for (const row of sinceResults) {
+    const sku = normalizeSku(
+      row.segments?.product_item_id || row.segments?.productItemId || ''
+    );
+    const optimized = latestOptimizedMap[sku];
+
+    if (!sku || !optimized) {
+      continue;
+    }
+
+    const rowDate = row.segments?.date;
+
+    if (!rowDate) {
+      continue;
+    }
+
+    const optimizedDateParam = formatDateParam(new Date(optimized.optimizedAt));
+
+    if (rowDate < optimizedDateParam) {
+      continue;
+    }
+
+    if (!googleMap[sku]) {
+      googleMap[sku] = { clicks: 0, impressions: 0, cost: 0 };
+    }
+
+    googleMap[sku].clicks += parseInt(row.metrics?.clicks || 0, 10);
+    googleMap[sku].impressions += parseInt(row.metrics?.impressions || 0, 10);
+    googleMap[sku].cost +=
+      parseFloat(row.metrics?.cost_micros || row.metrics?.costMicros || 0) / 1000000;
+  }
+
+  return googleMap;
+}
+
 export async function GET(request) {
   try {
     const { user } = await getAuthenticatedUser();
@@ -396,6 +564,7 @@ export async function GET(request) {
       trailingOrdersResponse,
       wooProductsResponse,
       optimizationLogs,
+      optimizationHistory,
       productMetaRecords,
       latestPageAudits,
     ] = await Promise.all([
@@ -403,7 +572,8 @@ export async function GET(request) {
       fetchAllWooCommerceOrders(wooClient, startBoundary, endBoundary),
       fetchAllWooCommerceOrders(wooClient, trailingStartBoundary, endBoundary),
       fetchAllWooCommerceProducts(wooClient),
-      fetchOptimizationLogs(storeId, learningPeriodStart),
+      fetchOptimizationLogs(storeId),
+      fetchOptimizationHistory(storeId),
       fetchProductMetaRecords(storeId),
       fetchLatestPageAudits(storeId),
     ]);
@@ -464,6 +634,72 @@ export async function GET(request) {
       optimizationMap[sku] = log;
     }
 
+    const latestHistoryMap = {};
+    for (const history of optimizationHistory) {
+      const sku = normalizeSku(history.sku);
+
+      if (!sku || latestHistoryMap[sku]) {
+        continue;
+      }
+
+      latestHistoryMap[sku] = history;
+    }
+
+    // Latest "Mark Optimized" entry per SKU. The log is the source of truth for
+    // the timestamp (it is always written); the note comes from the matching
+    // history snapshot when one was captured in the same request.
+    const latestOptimizedMap = {};
+    for (const log of optimizationLogs) {
+      const sku = normalizeSku(log.sku);
+
+      if (!sku || latestOptimizedMap[sku]) {
+        continue;
+      }
+
+      const history = latestHistoryMap[sku];
+      let note = log.actionTaken || 'Marked as optimized';
+
+      if (history?.optimizationNotes && history.snapshotDate && log.appliedAt) {
+        const noteLagMs =
+          new Date(history.snapshotDate).getTime() - new Date(log.appliedAt).getTime();
+
+        if (noteLagMs >= 0 && noteLagMs < 60000) {
+          note = history.optimizationNotes;
+        }
+      }
+
+      latestOptimizedMap[sku] = {
+        optimizedAt: log.appliedAt,
+        note,
+      };
+    }
+
+    let sinceOptimizedGoogleMap = {};
+    let sinceOptimizedWooMap = {};
+
+    // Zero overhead when nothing has been optimized: the extra Google Ads and
+    // WooCommerce requests only run for stores with at least one entry.
+    if (Object.keys(latestOptimizedMap).length > 0) {
+      const earliestOptimizedTime = Object.values(latestOptimizedMap).reduce(
+        (earliest, item) => {
+          const time = new Date(item.optimizedAt).getTime();
+          return time < earliest ? time : earliest;
+        },
+        Infinity
+      );
+
+      const [sinceGoogleMap, sinceOptimizedOrdersResponse] = await Promise.all([
+        fetchSinceOptimizedGoogleMetrics(customer, latestOptimizedMap),
+        fetchAllWooCommerceOrders(wooClient, new Date(earliestOptimizedTime), new Date()),
+      ]);
+
+      sinceOptimizedGoogleMap = sinceGoogleMap;
+      sinceOptimizedWooMap = buildSinceOptimizedSalesMap(
+        sinceOptimizedOrdersResponse.data,
+        latestOptimizedMap
+      );
+    }
+
     const productMetaMap = {};
     for (const record of productMetaRecords) {
       const sku = normalizeSku(record.normalizedSku || record.sku);
@@ -522,53 +758,54 @@ export async function GET(request) {
       };
       const optimizationLog = optimizationMap[sku] || null;
       const latestAudit = latestAuditMap[sku] || null;
-      const acos = salesMetrics.rev > 0 ? (googleMetrics.cost / salesMetrics.rev) * 100 : 0;
-      const convRate = googleMetrics.clicks > 0 ? (salesMetrics.count / googleMetrics.clicks) * 100 : 0;
-      const safeUnitCost = Number.isFinite(Number(productMeta.costPrice))
-        ? Number(productMeta.costPrice)
-        : 0;
-      const totalCogs = safeUnitCost * salesMetrics.count;
-      const adCostPerSale =
-        salesMetrics.count > 0 ? googleMetrics.cost / salesMetrics.count : null;
-      const profitPerSale =
-        adCostPerSale === null ? null : inventory.price - (safeUnitCost + adCostPerSale);
-      const totalProfit = salesMetrics.rev - googleMetrics.cost - totalCogs;
-      const stockDaysRemaining =
-        inventory.stock_quantity <= 0
-          ? 0
-          : trailingSales.count > 0
-            ? inventory.stock_quantity / (trailingSales.count / TRAILING_SALES_WINDOW_DAYS)
-            : null;
+      const latestOptimized = latestOptimizedMap[sku] || null;
+      const metrics = computeMetrics(
+        googleMetrics,
+        salesMetrics,
+        trailingSales,
+        inventory,
+        productMeta
+      );
+      const learningPhase = Boolean(
+        optimizationLog &&
+          new Date(optimizationLog.appliedAt).getTime() >= learningPeriodStart.getTime()
+      );
+
+      const sinceOptimized = latestOptimized
+        ? {
+            optimizedAt: latestOptimized.optimizedAt,
+            note: latestOptimized.note,
+            impressions: sinceOptimizedGoogleMap[sku]?.impressions || 0,
+            ...computeMetrics(
+              sinceOptimizedGoogleMap[sku] || { clicks: 0, impressions: 0, cost: 0 },
+              sinceOptimizedWooMap[sku] || { rev: 0, count: 0 },
+              trailingSales,
+              inventory,
+              productMeta
+            ),
+          }
+        : null;
 
       return {
         actionTaken: optimizationLog?.actionTaken || null,
-        acos: acos.toFixed(2),
-        adCost: googleMetrics.cost.toFixed(2),
-        adCostPerSale: adCostPerSale === null ? null : adCostPerSale.toFixed(2),
+        ...metrics,
         auditMissingElements: latestAudit?.missingElements || [],
         auditScore: latestAudit?.score ?? null,
-        clicks: googleMetrics.clicks,
-        convRate: convRate.toFixed(2),
         costPrice: Number(productMeta.costPrice || 0).toFixed(2),
         isHidden: productMeta.isHidden || false,
         latestAuditAt: latestAudit?.createdAt || null,
         leadTime: productMeta.leadTime || 0,
-        learningPhase: Boolean(optimizationLog),
+        learningPhase,
         minSalesTarget: productMeta.minSalesTarget || 0,
         optimizedAt: optimizationLog?.appliedAt || null,
         price: inventory.price.toFixed(2),
         productName: inventory.productName,
         productUrl: inventory.productUrl,
-        profitPerSale: profitPerSale === null ? null : profitPerSale.toFixed(2),
-        totalProfit: totalProfit.toFixed(2),
-        revenue: salesMetrics.rev.toFixed(2),
-        salesCount: salesMetrics.count,
         salesLast30: trailingSales.count,
+        sinceOptimized,
         sku: sku.toUpperCase(),
         stock_quantity: inventory.stock_quantity,
         stock_status: inventory.stock_status,
-        stockDaysRemaining:
-          stockDaysRemaining === null ? null : Number(stockDaysRemaining.toFixed(1)),
       };
     });
 
